@@ -1,0 +1,109 @@
+{
+    "name": "moffhub/billing",
+    "description": "Feature-based billing for Laravel with African payment provider support (M-Pesa, Paystack, Flutterwave, Pesapal). Plans, feature gating, usage metering, subscriptions, and invoicing.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "laravel",
+        "billing",
+        "subscription",
+        "payments",
+        "feature-flags",
+        "feature-gating",
+        "mpesa",
+        "paystack",
+        "flutterwave",
+        "pesapal",
+        "saas",
+        "usage-billing",
+        "metered-billing",
+        "invoicing",
+        "recurring-payments",
+        "africa",
+        "kenya",
+        "laravel-package"
+    ],
+    "homepage": "https://github.com/moffhub/billing",
+    "support": {
+        "issues": "https://github.com/moffhub/billing/issues",
+        "source": "https://github.com/moffhub/billing"
+    },
+    "authors": [
+        {
+            "name": "Moffat Munene",
+            "email": "moffmu@gmail.com"
+        }
+    ],
+    "contributors": [
+        {
+            "name": "Moffat Munene",
+            "email": "moffmu@gmail.com",
+            "homepage": "https://github.com/MOFFROUGH",
+            "role": "Maintainer"
+        }
+    ],
+    "require": {
+        "php": "^8.3|^8.4|^8.5",
+        "illuminate/support": "^12.0",
+        "illuminate/database": "^12.0",
+        "illuminate/http": "^12.0",
+        "illuminate/routing": "^12.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.22",
+        "orchestra/testbench": "^10.6",
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^11.5",
+        "rector/rector": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Moffhub\\Billing\\": "src/"
+        },
+        "files": [
+            "src/Helpers/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Moffhub\\Billing\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Moffhub\\Billing\\BillingServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true
+    },
+    "scripts": {
+        "check-code": [
+            "@lint",
+            "@phpstan",
+            "@test"
+        ],
+        "lint": [
+            "vendor/bin/pint --test"
+        ],
+        "lint:fix": [
+            "vendor/bin/pint"
+        ],
+        "phpstan": [
+            "vendor/bin/phpstan --memory-limit=512M"
+        ],
+        "rector": [
+            "vendor/bin/rector process --dry-run"
+        ],
+        "rector:fix": [
+            "vendor/bin/rector process"
+        ],
+        "test": [
+            "vendor/bin/phpunit"
+        ]
+    }
+}
