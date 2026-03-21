@@ -7,6 +7,8 @@ namespace Moffhub\Billing\Tests\Unit;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\PaymentManager;
 use Moffhub\Billing\Providers\ManualProvider;
+use Moffhub\Billing\Providers\MpesaProvider;
+use Moffhub\Billing\Providers\PaystackProvider;
 use Moffhub\Billing\Tests\BaseTestCase;
 
 class PaymentManagerTest extends BaseTestCase
@@ -33,20 +35,29 @@ class PaymentManagerTest extends BaseTestCase
         $this->assertEquals('manual', $this->manager->getDefaultDriver());
     }
 
-    public function test_mpesa_driver_not_implemented(): void
+    public function test_mpesa_driver_creates_provider(): void
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('M-Pesa provider not yet implemented');
+        $this->app['config']->set('billing.providers.mpesa', [
+            'consumer_key' => 'test_key',
+            'consumer_secret' => 'test_secret',
+            'shortcode' => '174379',
+            'passkey' => 'test_passkey',
+        ]);
 
-        $this->manager->driver('mpesa');
+        $driver = $this->manager->driver('mpesa');
+
+        $this->assertInstanceOf(MpesaProvider::class, $driver);
+        $this->assertEquals('mpesa', $driver->getName());
     }
 
-    public function test_paystack_driver_not_implemented(): void
+    public function test_paystack_driver_creates_provider(): void
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Paystack provider not yet implemented');
+        $this->app['config']->set('billing.providers.paystack.secret_key', 'sk_test');
 
-        $this->manager->driver('paystack');
+        $driver = $this->manager->driver('paystack');
+
+        $this->assertInstanceOf(PaystackProvider::class, $driver);
+        $this->assertEquals('paystack', $driver->getName());
     }
 
     public function test_get_available_providers(): void

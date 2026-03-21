@@ -13,11 +13,14 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Moffhub\Billing\Contracts\FeatureResolverInterface;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
+use Moffhub\Billing\Contracts\TaxCalculatorInterface;
 use Moffhub\Billing\Http\Controllers\WebhookController;
 use Moffhub\Billing\Security\FieldEncryptor;
 use Moffhub\Billing\Services\BillingService;
 use Moffhub\Billing\Services\CouponService;
 use Moffhub\Billing\Services\FeatureResolver;
+use Moffhub\Billing\Services\InvoiceService;
+use Moffhub\Billing\Services\KenyanTaxCalculator;
 use Moffhub\Billing\Services\UsageService;
 
 class BillingServiceProvider extends ServiceProvider
@@ -48,6 +51,19 @@ class BillingServiceProvider extends ServiceProvider
 
         // Bind the default payment provider
         $this->app->bind(PaymentProviderInterface::class, fn ($app) => $app->make(PaymentManager::class)->driver());
+
+        // Bind tax calculator — use config override or fall back to KenyanTaxCalculator
+        $this->app->singleton(TaxCalculatorInterface::class, function ($app) {
+            $customClass = config('billing.tax.calculator');
+
+            if ($customClass && class_exists($customClass)) {
+                return $app->make($customClass);
+            }
+
+            return $app->make(KenyanTaxCalculator::class);
+        });
+
+        $this->app->singleton(InvoiceService::class);
     }
 
     public function boot(): void
@@ -64,6 +80,8 @@ class BillingServiceProvider extends ServiceProvider
             $this->commands([
                 Console\Commands\SyncPlansCommand::class,
                 Console\Commands\BillingHealthCommand::class,
+                Console\Commands\ProcessRenewalsCommand::class,
+                Console\Commands\ProcessInvoicesCommand::class,
             ]);
         }
 

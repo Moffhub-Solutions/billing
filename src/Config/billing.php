@@ -127,6 +127,10 @@ return [
             'callback_url' => env('MPESA_CALLBACK_URL'),
             'timeout_url' => env('MPESA_TIMEOUT_URL'),
             'base_url' => env('MPESA_BASE_URL'), // auto-set based on environment if null
+            // B2C (refunds/disbursements) — optional
+            'initiator_name' => env('MPESA_INITIATOR_NAME'),
+            'initiator_password' => env('MPESA_INITIATOR_PASSWORD'),
+            'certificate_path' => env('MPESA_CERTIFICATE_PATH'), // path to Safaricom .cer file
         ],
 
         'paystack' => [
@@ -150,6 +154,7 @@ return [
             'environment' => env('PESAPAL_ENVIRONMENT', 'sandbox'),
             'callback_url' => env('PESAPAL_CALLBACK_URL'),
             'base_url' => env('PESAPAL_BASE_URL'), // auto-set based on environment if null
+            'ipn_id' => env('PESAPAL_IPN_ID'), // from RegisterIPN — call once and store
         ],
 
         'manual' => [

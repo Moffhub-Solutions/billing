@@ -7,10 +7,17 @@ namespace Moffhub\Billing\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Moffhub\Billing\Database\Factories\InvoiceItemFactory;
 
 class InvoiceItem extends Model
 {
+    /** @use HasFactory<InvoiceItemFactory> */
     use HasFactory;
+
+    protected static function newFactory(): InvoiceItemFactory
+    {
+        return InvoiceItemFactory::new();
+    }
 
     protected $guarded = ['id'];
 

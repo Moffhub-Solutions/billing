@@ -7,12 +7,19 @@ namespace Moffhub\Billing\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Moffhub\Billing\Database\Factories\FeatureFactory;
 use Moffhub\Billing\Enums\BillingCycle;
 use Moffhub\Billing\Enums\FeatureType;
 
 class Feature extends Model
 {
+    /** @use HasFactory<FeatureFactory> */
     use HasFactory;
+
+    protected static function newFactory(): FeatureFactory
+    {
+        return FeatureFactory::new();
+    }
 
     protected $guarded = ['id'];
 

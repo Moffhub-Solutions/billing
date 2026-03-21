@@ -7,7 +7,11 @@ namespace Moffhub\Billing;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Manager;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
+use Moffhub\Billing\Providers\FlutterwaveProvider;
 use Moffhub\Billing\Providers\ManualProvider;
+use Moffhub\Billing\Providers\MpesaProvider;
+use Moffhub\Billing\Providers\PaystackProvider;
+use Moffhub\Billing\Providers\PesapalProvider;
 
 class PaymentManager extends Manager
 {
@@ -20,40 +24,73 @@ class PaymentManager extends Manager
     }
 
     /**
-     * Create the M-Pesa payment driver.
-     * Placeholder — full implementation in Phase 3.
+     * Create the M-Pesa payment driver (Safaricom Daraja API).
      */
     public function createMpesaDriver(): PaymentProviderInterface
     {
-        // Will be: return new MpesaProvider(config('billing.providers.mpesa'));
-        throw new \RuntimeException('M-Pesa provider not yet implemented. Coming in Phase 3.');
+        $config = $this->app['config']['billing.providers.mpesa'] ?? [];
+
+        return new MpesaProvider(
+            consumerKey: $config['consumer_key'] ?? '',
+            consumerSecret: $config['consumer_secret'] ?? '',
+            shortcode: $config['shortcode'] ?? '',
+            passkey: $config['passkey'] ?? '',
+            environment: $config['environment'] ?? 'sandbox',
+            callbackUrl: $config['callback_url'] ?? '',
+            timeoutUrl: $config['timeout_url'] ?? '',
+            baseUrl: $config['base_url'] ?? null,
+            initiatorName: $config['initiator_name'] ?? null,
+            initiatorPassword: $config['initiator_password'] ?? null,
+            certificatePath: $config['certificate_path'] ?? null,
+        );
     }
 
     /**
      * Create the Paystack payment driver.
-     * Placeholder — full implementation in Phase 3.
      */
     public function createPaystackDriver(): PaymentProviderInterface
     {
-        throw new \RuntimeException('Paystack provider not yet implemented. Coming in Phase 3.');
+        $config = $this->app['config']['billing.providers.paystack'] ?? [];
+
+        return new PaystackProvider(
+            secretKey: $config['secret_key'] ?? '',
+            publicKey: $config['public_key'] ?? '',
+            webhookSecret: $config['webhook_secret'] ?? '',
+            baseUrl: $config['base_url'] ?? 'https://api.paystack.co',
+        );
     }
 
     /**
      * Create the Flutterwave payment driver.
-     * Placeholder — full implementation in Phase 3.
      */
     public function createFlutterwaveDriver(): PaymentProviderInterface
     {
-        throw new \RuntimeException('Flutterwave provider not yet implemented. Coming in Phase 3.');
+        $config = $this->app['config']['billing.providers.flutterwave'] ?? [];
+
+        return new FlutterwaveProvider(
+            secretKey: $config['secret_key'] ?? '',
+            publicKey: $config['public_key'] ?? '',
+            encryptionKey: $config['encryption_key'] ?? '',
+            webhookSecret: $config['webhook_secret'] ?? '',
+            baseUrl: $config['base_url'] ?? 'https://api.flutterwave.com/v3',
+        );
     }
 
     /**
-     * Create the Pesapal payment driver.
-     * Placeholder — full implementation in Phase 3.
+     * Create the Pesapal payment driver (Pesapal API v3).
      */
     public function createPesapalDriver(): PaymentProviderInterface
     {
-        throw new \RuntimeException('Pesapal provider not yet implemented. Coming in Phase 3.');
+        $config = $this->app['config']['billing.providers.pesapal'] ?? [];
+
+        return new PesapalProvider(
+            consumerKey: $config['consumer_key'] ?? '',
+            consumerSecret: $config['consumer_secret'] ?? '',
+            environment: $config['environment'] ?? 'sandbox',
+            callbackUrl: $config['callback_url'] ?? '',
+            baseUrl: $config['base_url'] ?? null,
+            ipnId: $config['ipn_id'] ?? null,
+        );
     }
 
     /**

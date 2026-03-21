@@ -9,10 +9,17 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Moffhub\Billing\Database\Factories\PromotionCodeFactory;
 
 class PromotionCode extends Model
 {
+    /** @use HasFactory<PromotionCodeFactory> */
     use HasFactory;
+
+    protected static function newFactory(): PromotionCodeFactory
+    {
+        return PromotionCodeFactory::new();
+    }
 
     protected $guarded = ['id'];
 

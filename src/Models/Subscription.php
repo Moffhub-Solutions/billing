@@ -10,11 +10,18 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Moffhub\Billing\Database\Factories\SubscriptionFactory;
 use Moffhub\Billing\Enums\SubscriptionStatus;
 
 class Subscription extends Model
 {
+    /** @use HasFactory<SubscriptionFactory> */
     use HasFactory;
+
+    protected static function newFactory(): SubscriptionFactory
+    {
+        return SubscriptionFactory::new();
+    }
 
     protected $guarded = ['id'];
 

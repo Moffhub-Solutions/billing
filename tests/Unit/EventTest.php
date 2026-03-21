@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Tests\Unit;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Events\Dispatchable;
 use Moffhub\Billing\Events\FeatureAccessDenied;
 use Moffhub\Billing\Events\PaymentFailed;
@@ -131,7 +132,7 @@ class EventTest extends TestCase
     {
         $billable = new \stdClass;
         // Use a mock for the model since we just need to test property assignment
-        $billable = $this->createMock(\Illuminate\Database\Eloquent\Model::class);
+        $billable = $this->createMock(Model::class);
 
         $event = new UsageLimitApproaching($billable, 'ocr_scanning', 80, 100, 0.8);
 
@@ -152,7 +153,7 @@ class EventTest extends TestCase
 
     public function test_feature_access_denied_has_properties(): void
     {
-        $billable = $this->createMock(\Illuminate\Database\Eloquent\Model::class);
+        $billable = $this->createMock(Model::class);
 
         $event = new FeatureAccessDenied($billable, 'analytics', 'Not in plan');
 

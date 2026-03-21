@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Tests\Feature;
 
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Moffhub\Billing\Enums\BillingCycle;
 use Moffhub\Billing\Enums\FeatureType;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Enums\SubscriptionStatus;
-use Moffhub\Billing\Events\PaymentReceived;
 use Moffhub\Billing\Models\Feature;
 use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\Models\Plan;

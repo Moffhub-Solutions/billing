@@ -6,7 +6,6 @@ namespace Moffhub\Billing\Tests\Feature;
 
 use Illuminate\Support\Str;
 use Moffhub\Billing\Models\Coupon;
-use Moffhub\Billing\Models\PromotionCode;
 use Moffhub\Billing\Tests\BaseTestCase;
 use Moffhub\Billing\Tests\Fixtures\Models\Company;
 use Moffhub\Billing\Tests\Fixtures\Models\User;

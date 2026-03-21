@@ -7,10 +7,17 @@ namespace Moffhub\Billing\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Moffhub\Billing\Database\Factories\SubscriptionAddonFactory;
 
 class SubscriptionAddon extends Model
 {
+    /** @use HasFactory<SubscriptionAddonFactory> */
     use HasFactory;
+
+    protected static function newFactory(): SubscriptionAddonFactory
+    {
+        return SubscriptionAddonFactory::new();
+    }
 
     protected $guarded = ['id'];
 

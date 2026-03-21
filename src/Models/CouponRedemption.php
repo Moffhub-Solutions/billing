@@ -8,10 +8,17 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Moffhub\Billing\Database\Factories\CouponRedemptionFactory;
 
 class CouponRedemption extends Model
 {
+    /** @use HasFactory<CouponRedemptionFactory> */
     use HasFactory;
+
+    protected static function newFactory(): CouponRedemptionFactory
+    {
+        return CouponRedemptionFactory::new();
+    }
 
     protected $guarded = ['id'];
 

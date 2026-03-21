@@ -9,10 +9,17 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Moffhub\Billing\Casts\EncryptedString;
+use Moffhub\Billing\Database\Factories\PaymentTokenFactory;
 
 class PaymentToken extends Model
 {
+    /** @use HasFactory<PaymentTokenFactory> */
     use HasFactory;
+
+    protected static function newFactory(): PaymentTokenFactory
+    {
+        return PaymentTokenFactory::new();
+    }
 
     protected $guarded = ['id'];
 

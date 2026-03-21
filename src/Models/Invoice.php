@@ -4,16 +4,24 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Moffhub\Billing\Database\Factories\InvoiceFactory;
 use Moffhub\Billing\Enums\InvoiceStatus;
 
 class Invoice extends Model
 {
+    /** @use HasFactory<InvoiceFactory> */
     use HasFactory;
+
+    protected static function newFactory(): InvoiceFactory
+    {
+        return InvoiceFactory::new();
+    }
 
     protected $guarded = ['id'];
 
@@ -88,5 +96,49 @@ class Invoice extends Model
     public function formattedTotal(): string
     {
         return $this->currency.' '.number_format($this->total / 100, 2);
+    }
+
+    /**
+     * Check if this invoice is a credit note (negative total).
+     */
+    public function isCreditNote(): bool
+    {
+        return $this->total < 0;
+    }
+
+    /**
+     * Get the original invoice if this is a credit note.
+     */
+    public function creditNoteFor(): ?self
+    {
+        $metadata = $this->metadata ?? [];
+
+        if (! isset($metadata['original_invoice_id'])) {
+            return null;
+        }
+
+        return self::find($metadata['original_invoice_id']);
+    }
+
+    /**
+     * Scope to only credit notes (negative total).
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeCreditNotes(Builder $query): Builder
+    {
+        return $query->where('total', '<', 0);
+    }
+
+    /**
+     * Scope to only regular invoices (non-negative total).
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeRegularInvoices(Builder $query): Builder
+    {
+        return $query->where('total', '>=', 0);
     }
 }

@@ -11,7 +11,6 @@ use Moffhub\Billing\Enums\SubscriptionStatus;
 use Moffhub\Billing\Models\Feature;
 use Moffhub\Billing\Models\Plan;
 use Moffhub\Billing\Models\Subscription;
-use Moffhub\Billing\Models\UsageRecord;
 use Moffhub\Billing\Tests\BaseTestCase;
 use Moffhub\Billing\Tests\Fixtures\Models\Company;
 use Moffhub\Billing\Tests\Fixtures\Models\User;

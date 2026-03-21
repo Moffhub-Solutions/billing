@@ -18,3 +18,5 @@ parameters:
       - identifier: function.alreadyNarrowedType
       - identifier: booleanAnd.rightAlwaysTrue
       - identifier: method.protected
+      - identifier: method.alreadyNarrowedType
+      - identifier: assign.propertyType

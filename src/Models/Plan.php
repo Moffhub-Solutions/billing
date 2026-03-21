@@ -8,11 +8,18 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Moffhub\Billing\Database\Factories\PlanFactory;
 use Moffhub\Billing\Enums\BillingCycle;
 
 class Plan extends Model
 {
+    /** @use HasFactory<PlanFactory> */
     use HasFactory;
+
+    protected static function newFactory(): PlanFactory
+    {
+        return PlanFactory::new();
+    }
 
     protected $guarded = ['id'];
 

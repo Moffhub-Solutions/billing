@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Tests\Feature;
 
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\PaymentManager;
 use Moffhub\Billing\Tests\BaseTestCase;
@@ -87,19 +90,19 @@ class WebhookApiTest extends BaseTestCase
     public function test_webhook_rate_limiting_is_configured(): void
     {
         // Verify the billing-webhooks rate limiter is registered
-        $limiter = $this->app->make(\Illuminate\Cache\RateLimiting\Limit::class, [
+        $limiter = $this->app->make(Limit::class, [
             'maxAttempts' => 0,
         ]);
 
         // The rate limiter named 'billing-webhooks' should exist
-        $rateLimiter = \Illuminate\Support\Facades\RateLimiter::limiter('billing-webhooks');
+        $rateLimiter = RateLimiter::limiter('billing-webhooks');
         $this->assertNotNull($rateLimiter, 'The billing-webhooks rate limiter should be registered.');
 
         // Verify it returns a Limit with the configured max attempts
-        $request = \Illuminate\Http\Request::create('/billing/webhooks/mpesa', 'POST');
+        $request = Request::create('/billing/webhooks/mpesa', 'POST');
         $limit = call_user_func($rateLimiter, $request);
 
-        $this->assertInstanceOf(\Illuminate\Cache\RateLimiting\Limit::class, $limit);
+        $this->assertInstanceOf(Limit::class, $limit);
         $this->assertEquals(
             (int) config('billing.webhooks.rate_limit', 60),
             $limit->maxAttempts

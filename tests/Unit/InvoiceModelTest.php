@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Tests\Unit;
 
+use Carbon\Carbon;
 use Illuminate\Support\Str;
 use Moffhub\Billing\Enums\InvoiceStatus;
 use Moffhub\Billing\Models\Invoice;
@@ -215,8 +216,8 @@ class InvoiceModelTest extends BaseTestCase
             'paid_at' => now(),
         ]);
 
-        $this->assertInstanceOf(\Carbon\Carbon::class, $invoice->due_date);
-        $this->assertInstanceOf(\Carbon\Carbon::class, $invoice->paid_at);
+        $this->assertInstanceOf(Carbon::class, $invoice->due_date);
+        $this->assertInstanceOf(Carbon::class, $invoice->paid_at);
     }
 
     public function test_morphable(): void

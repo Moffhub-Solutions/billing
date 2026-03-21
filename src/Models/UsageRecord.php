@@ -8,10 +8,17 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Moffhub\Billing\Database\Factories\UsageRecordFactory;
 
 class UsageRecord extends Model
 {
+    /** @use HasFactory<UsageRecordFactory> */
     use HasFactory;
+
+    protected static function newFactory(): UsageRecordFactory
+    {
+        return UsageRecordFactory::new();
+    }
 
     protected $guarded = ['id'];
 

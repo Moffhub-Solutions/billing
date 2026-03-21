@@ -8,12 +8,19 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Moffhub\Billing\Database\Factories\CouponFactory;
 use Moffhub\Billing\Enums\CouponDuration;
 use Moffhub\Billing\Enums\DiscountType;
 
 class Coupon extends Model
 {
+    /** @use HasFactory<CouponFactory> */
     use HasFactory;
+
+    protected static function newFactory(): CouponFactory
+    {
+        return CouponFactory::new();
+    }
 
     protected $guarded = ['id'];
 

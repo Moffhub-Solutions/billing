@@ -7,10 +7,17 @@ namespace Moffhub\Billing\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Moffhub\Billing\Database\Factories\UsageEventFactory;
 
 class UsageEvent extends Model
 {
+    /** @use HasFactory<UsageEventFactory> */
     use HasFactory;
+
+    protected static function newFactory(): UsageEventFactory
+    {
+        return UsageEventFactory::new();
+    }
 
     protected $guarded = ['id'];
 
