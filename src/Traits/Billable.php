@@ -125,6 +125,36 @@ trait Billable
     }
 
     /**
+     * Check if the billable has access to a feature, or is an admin that bypasses gating.
+     *
+     * The admin check method is configured via `billing.admin_bypass_method`.
+     * If the method exists on this model and returns true, feature access is granted
+     * regardless of subscription status.
+     */
+    public function hasFeatureOrAdmin(string $featureSlug): bool
+    {
+        if ($this->isBillingAdmin()) {
+            return true;
+        }
+
+        return $this->hasFeature($featureSlug);
+    }
+
+    /**
+     * Check if this billable is considered an admin for billing bypass purposes.
+     */
+    public function isBillingAdmin(): bool
+    {
+        $method = config('billing.admin_bypass_method');
+
+        if ($method === null) {
+            return false;
+        }
+
+        return method_exists($this, $method) && $this->{$method}() === true;
+    }
+
+    /**
      * Get the current period usage count for a metered feature.
      */
     public function usage(string $featureSlug): int

@@ -14,6 +14,7 @@ use Illuminate\Support\ServiceProvider;
 use Moffhub\Billing\Contracts\FeatureResolverInterface;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Contracts\TaxCalculatorInterface;
+use Moffhub\Billing\Http\Controllers\UssdController;
 use Moffhub\Billing\Http\Controllers\WebhookController;
 use Moffhub\Billing\Security\FieldEncryptor;
 use Moffhub\Billing\Services\BillingService;
@@ -22,6 +23,8 @@ use Moffhub\Billing\Services\FeatureResolver;
 use Moffhub\Billing\Services\InvoiceService;
 use Moffhub\Billing\Services\KenyanTaxCalculator;
 use Moffhub\Billing\Services\UsageService;
+use Moffhub\Billing\Services\UssdMenuBuilder;
+use Moffhub\Billing\Services\UssdSessionManager;
 
 class BillingServiceProvider extends ServiceProvider
 {
@@ -64,6 +67,13 @@ class BillingServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(InvoiceService::class);
+
+        $this->app->singleton(UssdSessionManager::class);
+
+        $this->app->singleton(UssdMenuBuilder::class, fn ($app): UssdMenuBuilder => new UssdMenuBuilder(
+            $app->make(UssdSessionManager::class),
+            $app->make(PaymentManager::class),
+        ));
     }
 
     public function boot(): void
@@ -89,6 +99,7 @@ class BillingServiceProvider extends ServiceProvider
         $this->configureRateLimiting();
         $this->registerRoutes();
         $this->registerWebhookRoutes();
+        $this->registerUssdRoutes();
         $this->registerBladeDirectives();
     }
 
@@ -152,6 +163,22 @@ class BillingServiceProvider extends ServiceProvider
     }
 
     /**
+     * Register USSD callback route.
+     */
+    protected function registerUssdRoutes(): void
+    {
+        if (! config('billing.ussd.enabled', false)) {
+            return;
+        }
+
+        Route::prefix('billing/ussd')
+            ->withoutMiddleware(['auth', 'auth:sanctum', 'auth:api'])
+            ->group(function (): void {
+                Route::post('/callback', [UssdController::class, 'handle'])->name('billing.ussd.callback');
+            });
+    }
+
+    /**
      * Configure rate limiting for billing routes.
      */
     protected function configureRateLimiting(): void
@@ -198,21 +225,26 @@ class BillingServiceProvider extends ServiceProvider
                 return false;
             }
 
-            if (method_exists($user, 'hasFeature')) {
-                return $user->hasFeature($featureSlug);
+            $billable = $user;
+
+            if (! method_exists($user, 'hasFeature')) {
+                $billableRelation = config('billing.billable_relation', 'company');
+
+                $billable = method_exists($user, $billableRelation)
+                    ? $user->{$billableRelation}
+                    : null;
             }
 
-            $billableRelation = config('billing.billable_relation', 'company');
-
-            if (method_exists($user, $billableRelation)) {
-                $billable = $user->{$billableRelation};
-
-                return $billable && method_exists($billable, 'hasFeature')
-                    ? $billable->hasFeature($featureSlug)
-                    : false;
+            if ($billable === null) {
+                return false;
             }
 
-            return false;
+            // Admin bypass
+            if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin()) {
+                return true;
+            }
+
+            return method_exists($billable, 'hasFeature') && $billable->hasFeature($featureSlug);
         });
 
         // @plan('professional') ... @endplan
@@ -223,21 +255,26 @@ class BillingServiceProvider extends ServiceProvider
                 return false;
             }
 
-            if (method_exists($user, 'onPlan')) {
-                return $user->onPlan($planSlug);
+            $billable = $user;
+
+            if (! method_exists($user, 'onPlan')) {
+                $billableRelation = config('billing.billable_relation', 'company');
+
+                $billable = method_exists($user, $billableRelation)
+                    ? $user->{$billableRelation}
+                    : null;
             }
 
-            $billableRelation = config('billing.billable_relation', 'company');
-
-            if (method_exists($user, $billableRelation)) {
-                $billable = $user->{$billableRelation};
-
-                return $billable && method_exists($billable, 'onPlan')
-                    ? $billable->onPlan($planSlug)
-                    : false;
+            if ($billable === null) {
+                return false;
             }
 
-            return false;
+            // Admin bypass
+            if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin()) {
+                return true;
+            }
+
+            return method_exists($billable, 'onPlan') && $billable->onPlan($planSlug);
         });
     }
 }

@@ -16,6 +16,6 @@ class FeatureAccessDenied
     public function __construct(
         public readonly ?Model $billable,
         public readonly string $featureSlug,
-        public readonly string $reason,
+        public readonly ?string $planSlug = null,
     ) {}
 }

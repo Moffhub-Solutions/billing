@@ -60,7 +60,14 @@ class ProcessDunning implements ShouldQueue
                     'cancelled_at' => now(),
                 ]);
 
-                SubscriptionCancelled::dispatch($subscription, true);
+                SubscriptionCancelled::dispatch(
+                    $subscription,
+                    $subscription->billable,
+                    $subscription->plan,
+                    $subscription->cancelled_at,
+                    $subscription->current_period_end,
+                    true,
+                );
             }
 
             return;
@@ -101,7 +108,15 @@ class ProcessDunning implements ShouldQueue
 
                 $subscription->billable->payments()->save($payment);
 
-                SubscriptionRenewed::dispatch($subscription);
+                SubscriptionRenewed::dispatch(
+                    $subscription,
+                    $subscription->billable,
+                    $plan,
+                    $subscription->current_period_start,
+                    $subscription->current_period_end,
+                    $plan->base_price,
+                    $currency,
+                );
             } else {
                 $this->handleRetryFailure($subscription, $provider, $currency, $result, $daysSinceFailure, $dunningSchedule, $gracePeriodDays);
             }
@@ -139,7 +154,18 @@ class ProcessDunning implements ShouldQueue
 
         $subscription->billable->payments()->save($payment);
 
-        PaymentFailed::dispatch($payment, "Dunning retry failed (day {$daysSinceFailure})");
+        // Count how many retries have been attempted
+        $retryIndex = array_search($daysSinceFailure, $dunningSchedule, true);
+        $retryCount = $retryIndex !== false ? $retryIndex + 1 : count($dunningSchedule);
+
+        PaymentFailed::dispatch(
+            $payment,
+            $subscription->billable,
+            $subscription->plan->base_price,
+            $currency,
+            "Dunning retry failed (day {$daysSinceFailure})",
+            $retryCount,
+        );
 
         // If this was the last retry and grace period has passed, cancel
         $maxRetryDay = max($dunningSchedule);
@@ -150,7 +176,14 @@ class ProcessDunning implements ShouldQueue
                 'cancelled_at' => now(),
             ]);
 
-            SubscriptionCancelled::dispatch($subscription, true);
+            SubscriptionCancelled::dispatch(
+                $subscription,
+                $subscription->billable,
+                $subscription->plan,
+                $subscription->cancelled_at,
+                $subscription->current_period_end,
+                true,
+            );
         }
     }
 }

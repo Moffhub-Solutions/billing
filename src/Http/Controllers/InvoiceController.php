@@ -199,7 +199,14 @@ class InvoiceController extends Controller
             'paid_at' => now(),
         ]);
 
-        PaymentReceived::dispatch($payment);
+        PaymentReceived::dispatch(
+            $payment,
+            $invoice->billable,
+            $payment->amount,
+            $payment->currency,
+            $payment->payment_method?->value,
+            $payment->provider_reference,
+        );
 
         return response()->json([
             'message' => 'Invoice marked as paid.',

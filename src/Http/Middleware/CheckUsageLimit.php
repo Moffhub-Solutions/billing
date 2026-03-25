@@ -25,6 +25,11 @@ class CheckUsageLimit
             throw UsageLimitExceededException::noSubscription();
         }
 
+        // Admin bypass — skip usage limit check
+        if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin()) {
+            return $next($request);
+        }
+
         $remaining = $billable->remainingQuota($featureSlug);
 
         // null = unlimited, allow through

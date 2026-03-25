@@ -7,6 +7,7 @@ namespace Moffhub\Billing\Services;
 use Illuminate\Support\Str;
 use Moffhub\Billing\Contracts\TaxCalculatorInterface;
 use Moffhub\Billing\Enums\InvoiceStatus;
+use Moffhub\Billing\Events\InvoiceGenerated;
 use Moffhub\Billing\Models\Invoice;
 use Moffhub\Billing\Models\Subscription;
 
@@ -86,7 +87,18 @@ class InvoiceService
             $invoice->items()->create($item);
         }
 
-        return $invoice->load('items');
+        $invoice->load('items');
+
+        InvoiceGenerated::dispatch(
+            $invoice,
+            $subscription->billable,
+            $invoice->number,
+            $invoice->total,
+            $invoice->currency,
+            $invoice->due_date,
+        );
+
+        return $invoice;
     }
 
     /**

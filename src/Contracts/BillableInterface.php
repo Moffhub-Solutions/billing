@@ -46,6 +46,16 @@ interface BillableInterface
     public function hasFeature(string $featureSlug): bool;
 
     /**
+     * Check if the billable has access to a feature, or is an admin that bypasses gating.
+     */
+    public function hasFeatureOrAdmin(string $featureSlug): bool;
+
+    /**
+     * Check if this billable is considered an admin for billing bypass purposes.
+     */
+    public function isBillingAdmin(): bool;
+
+    /**
      * Get the usage count for a metered feature in the current period.
      */
     public function usage(string $featureSlug): int;

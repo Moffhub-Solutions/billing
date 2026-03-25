@@ -15,6 +15,7 @@ use Moffhub\Billing\Http\Resources\SubscriptionResource;
 use Moffhub\Billing\Models\Plan;
 use Moffhub\Billing\Models\Subscription;
 use Moffhub\Billing\Services\FeatureResolver;
+use Moffhub\Billing\Services\ProrationCalculator;
 
 class SubscriptionController extends Controller
 {
@@ -164,7 +165,15 @@ class SubscriptionController extends Controller
         $billable = $subscription->billable;
         app(FeatureResolver::class)->clearCache($billable);
 
-        PlanChanged::dispatch($subscription->fresh(), $oldPlan, $newPlan);
+        $proration = app(ProrationCalculator::class)->calculate($subscription, $newPlan);
+
+        PlanChanged::dispatch(
+            $subscription->fresh(),
+            $billable,
+            $oldPlan,
+            $newPlan,
+            $proration['net'],
+        );
 
         return response()->json([
             'message' => "Plan changed from {$oldPlan->name} to {$newPlan->name}.",
@@ -182,7 +191,16 @@ class SubscriptionController extends Controller
         $immediately = $request->boolean('immediately', false);
         $subscription->cancel($immediately);
 
-        SubscriptionCancelled::dispatch($subscription, $immediately);
+        $subscription->load('plan', 'billable');
+
+        SubscriptionCancelled::dispatch(
+            $subscription,
+            $subscription->billable,
+            $subscription->plan,
+            $subscription->cancelled_at,
+            $immediately ? null : $subscription->current_period_end,
+            $immediately,
+        );
 
         $message = $immediately
             ? 'Subscription cancelled immediately.'

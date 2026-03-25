@@ -27,6 +27,11 @@ class CheckFeatureAccess
             throw FeatureNotAvailableException::noSubscription();
         }
 
+        // Admin bypass — skip all feature checks
+        if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin()) {
+            return $next($request);
+        }
+
         $requiredFeatures = explode(',', $features);
 
         foreach ($requiredFeatures as $feature) {

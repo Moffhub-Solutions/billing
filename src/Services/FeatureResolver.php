@@ -93,6 +93,11 @@ class FeatureResolver implements FeatureResolverInterface
      */
     protected function resolveFeature(Model $billable, string $featureSlug): bool
     {
+        // Admin bypass
+        if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin()) {
+            return true;
+        }
+
         if (! method_exists($billable, 'subscription')) {
             return false;
         }

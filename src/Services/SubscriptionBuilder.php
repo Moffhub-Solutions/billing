@@ -83,7 +83,12 @@ class SubscriptionBuilder
 
         $this->billable->subscriptions()->save($subscription);
 
-        SubscriptionCreated::dispatch($subscription);
+        SubscriptionCreated::dispatch(
+            $subscription,
+            $this->billable,
+            $plan,
+            $subscription->trial_ends_at,
+        );
 
         return $subscription;
     }

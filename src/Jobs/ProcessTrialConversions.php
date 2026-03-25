@@ -14,6 +14,7 @@ use Illuminate\Support\Str;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Enums\SubscriptionStatus;
 use Moffhub\Billing\Events\PaymentFailed;
+use Moffhub\Billing\Events\SubscriptionExpired;
 use Moffhub\Billing\Events\SubscriptionRenewed;
 use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\Models\Subscription;
@@ -72,7 +73,15 @@ class ProcessTrialConversions implements ShouldQueue
 
                 $subscription->billable->payments()->save($payment);
 
-                SubscriptionRenewed::dispatch($subscription);
+                SubscriptionRenewed::dispatch(
+                    $subscription,
+                    $subscription->billable,
+                    $plan,
+                    $subscription->current_period_start,
+                    $subscription->current_period_end,
+                    $plan->base_price,
+                    $currency,
+                );
             } else {
                 $this->handleFailure($subscription, $provider, $currency, $result);
             }
@@ -117,6 +126,21 @@ class ProcessTrialConversions implements ShouldQueue
 
         $subscription->billable->payments()->save($payment);
 
-        PaymentFailed::dispatch($payment, 'Trial conversion charge failed');
+        PaymentFailed::dispatch(
+            $payment,
+            $subscription->billable,
+            $subscription->plan->base_price,
+            $currency,
+            'Trial conversion charge failed',
+        );
+
+        if ($newStatus === SubscriptionStatus::EXPIRED) {
+            SubscriptionExpired::dispatch(
+                $subscription,
+                $subscription->billable,
+                $subscription->plan,
+                now(),
+            );
+        }
     }
 }

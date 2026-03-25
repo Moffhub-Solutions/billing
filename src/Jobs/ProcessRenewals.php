@@ -72,7 +72,15 @@ class ProcessRenewals implements ShouldQueue
 
                 $subscription->billable->payments()->save($payment);
 
-                SubscriptionRenewed::dispatch($subscription);
+                SubscriptionRenewed::dispatch(
+                    $subscription,
+                    $subscription->billable,
+                    $plan,
+                    $subscription->current_period_start,
+                    $subscription->current_period_end,
+                    $plan->base_price,
+                    $currency,
+                );
 
                 // Reset usage for the new period
                 $this->resetUsage($subscription);
@@ -109,7 +117,13 @@ class ProcessRenewals implements ShouldQueue
 
         $subscription->billable->payments()->save($payment);
 
-        PaymentFailed::dispatch($payment, 'Renewal charge failed');
+        PaymentFailed::dispatch(
+            $payment,
+            $subscription->billable,
+            $subscription->plan->base_price,
+            $currency,
+            'Renewal charge failed',
+        );
     }
 
     protected function resetUsage(Subscription $subscription): void

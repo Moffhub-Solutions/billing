@@ -38,6 +38,36 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Billable Relation
+    |--------------------------------------------------------------------------
+    |
+    | When the authenticated user is not the billable entity (e.g., User
+    | belongs to Company, Company is billable), specify the relationship
+    | method on the User model that returns the billable.
+    |
+    | Set to null if User is itself the billable.
+    |
+    */
+    'billable_relation' => 'company',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Admin Bypass
+    |--------------------------------------------------------------------------
+    |
+    | Allow admin users to bypass feature gating, plan access checks, and
+    | usage limits. The package calls the method named here on the billable
+    | (or authenticated user) to determine admin status.
+    |
+    | Set to null to disable admin bypass entirely.
+    |
+    | Examples: 'isAdmin', 'isSuperAdmin', 'hasFullAccess'
+    |
+    */
+    'admin_bypass_method' => null,
+
+    /*
+    |--------------------------------------------------------------------------
     | Invoice Settings
     |--------------------------------------------------------------------------
     */
@@ -214,6 +244,23 @@ return [
             'token', 'secret', 'password', 'api_key', 'consumer_secret',
             'auth_token', 'passkey', 'card_number', 'cvv', 'pin',
         ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | USSD Settings
+    |--------------------------------------------------------------------------
+    |
+    | Configure USSD billing access for feature-phone and low-bandwidth users.
+    | The gateway receives callbacks from providers like Africa's Talking.
+    |
+    */
+    'ussd' => [
+        'enabled' => env('BILLING_USSD_ENABLED', false),
+        'service_code' => env('BILLING_USSD_SERVICE_CODE', '*384*123#'),
+        'session_ttl' => 300, // 5 minutes
+        'gateway' => env('BILLING_USSD_GATEWAY', 'africastalking'), // africastalking, hubtel
+        'phone_field' => env('BILLING_USSD_PHONE_FIELD', 'phone'),
     ],
 
     /*

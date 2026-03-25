@@ -87,7 +87,14 @@ class PaymentController extends Controller
         ]);
 
         if ($payment->isCompleted()) {
-            PaymentReceived::dispatch($payment);
+            PaymentReceived::dispatch(
+                $payment,
+                $billable,
+                $payment->amount,
+                $payment->currency,
+                $payment->payment_method?->value,
+                $payment->provider_reference,
+            );
         }
 
         return response()->json([

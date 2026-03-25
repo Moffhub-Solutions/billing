@@ -27,6 +27,11 @@ class CheckPlanAccess
             throw FeatureNotAvailableException::noSubscription();
         }
 
+        // Admin bypass — skip plan check
+        if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin()) {
+            return $next($request);
+        }
+
         $allowedPlans = array_map(trim(...), explode(',', $plans));
 
         foreach ($allowedPlans as $plan) {

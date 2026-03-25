@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Moffhub\Billing\Database\Factories\SubscriptionFactory;
 use Moffhub\Billing\Enums\SubscriptionStatus;
+use Moffhub\Billing\Events\SubscriptionPaused;
+use Moffhub\Billing\Events\SubscriptionResumed;
 
 class Subscription extends Model
 {
@@ -164,6 +166,15 @@ class Subscription extends Model
             'paused_at' => now(),
         ]);
 
+        $this->load('plan', 'billable');
+
+        SubscriptionPaused::dispatch(
+            $this,
+            $this->billable,
+            $this->plan,
+            $this->paused_at,
+        );
+
         return $this;
     }
 
@@ -177,6 +188,15 @@ class Subscription extends Model
             'paused_at' => null,
             'resumed_at' => now(),
         ]);
+
+        $this->load('plan', 'billable');
+
+        SubscriptionResumed::dispatch(
+            $this,
+            $this->billable,
+            $this->plan,
+            $this->resumed_at,
+        );
 
         return $this;
     }
