@@ -49,6 +49,54 @@ class WebhookController extends Controller
     }
 
     /**
+     * Handle Airtel Money callback.
+     */
+    public function airtel(Request $request): JsonResponse
+    {
+        return $this->handleWebhook($request, 'airtel');
+    }
+
+    /**
+     * Handle KCB BUNI IPN.
+     */
+    public function kcb(Request $request): JsonResponse
+    {
+        return $this->handleWebhook($request, 'kcb');
+    }
+
+    /**
+     * Handle Equity Jenga webhook.
+     */
+    public function jenga(Request $request): JsonResponse
+    {
+        return $this->handleWebhook($request, 'jenga');
+    }
+
+    /**
+     * Handle Co-operative Bank callback.
+     */
+    public function coopbank(Request $request): JsonResponse
+    {
+        return $this->handleWebhook($request, 'coopbank');
+    }
+
+    /**
+     * Handle Stanbic Bank webhook.
+     */
+    public function stanbic(Request $request): JsonResponse
+    {
+        return $this->handleWebhook($request, 'stanbic');
+    }
+
+    /**
+     * Handle NCBA IPN.
+     */
+    public function ncba(Request $request): JsonResponse
+    {
+        return $this->handleWebhook($request, 'ncba');
+    }
+
+    /**
      * Process a webhook from any provider.
      */
     protected function handleWebhook(Request $request, string $providerName): JsonResponse

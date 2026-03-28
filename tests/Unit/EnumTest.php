@@ -147,6 +147,7 @@ class EnumTest extends TestCase
     public function test_payment_method_labels(): void
     {
         $this->assertEquals('M-Pesa', PaymentMethod::MPESA->label());
+        $this->assertEquals('Airtel Money', PaymentMethod::AIRTEL_MONEY->label());
         $this->assertEquals('Card', PaymentMethod::CARD->label());
         $this->assertEquals('Bank Transfer', PaymentMethod::BANK->label());
         $this->assertEquals('Mobile Money', PaymentMethod::MOBILE_MONEY->label());
@@ -156,6 +157,7 @@ class EnumTest extends TestCase
     public function test_payment_method_values(): void
     {
         $this->assertEquals('mpesa', PaymentMethod::MPESA->value);
+        $this->assertEquals('airtel_money', PaymentMethod::AIRTEL_MONEY->value);
         $this->assertEquals('card', PaymentMethod::CARD->value);
         $this->assertEquals('bank', PaymentMethod::BANK->value);
         $this->assertEquals('mobile_money', PaymentMethod::MOBILE_MONEY->value);

@@ -6,9 +6,15 @@ namespace Moffhub\Billing\Tests\Unit;
 
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\PaymentManager;
+use Moffhub\Billing\Providers\AirtelMoneyProvider;
+use Moffhub\Billing\Providers\CoopBankProvider;
+use Moffhub\Billing\Providers\JengaProvider;
+use Moffhub\Billing\Providers\KcbBuniProvider;
 use Moffhub\Billing\Providers\ManualProvider;
 use Moffhub\Billing\Providers\MpesaProvider;
+use Moffhub\Billing\Providers\NcbaProvider;
 use Moffhub\Billing\Providers\PaystackProvider;
+use Moffhub\Billing\Providers\StanbicProvider;
 use Moffhub\Billing\Tests\BaseTestCase;
 
 class PaymentManagerTest extends BaseTestCase
@@ -68,8 +74,14 @@ class PaymentManagerTest extends BaseTestCase
         $this->assertContains('paystack', $providers);
         $this->assertContains('flutterwave', $providers);
         $this->assertContains('pesapal', $providers);
+        $this->assertContains('airtel', $providers);
+        $this->assertContains('kcb', $providers);
+        $this->assertContains('jenga', $providers);
+        $this->assertContains('coopbank', $providers);
+        $this->assertContains('stanbic', $providers);
+        $this->assertContains('ncba', $providers);
         $this->assertContains('manual', $providers);
-        $this->assertCount(5, $providers);
+        $this->assertCount(11, $providers);
     }
 
     public function test_is_provider_configured_manual(): void
@@ -91,5 +103,121 @@ class PaymentManagerTest extends BaseTestCase
         ]);
 
         $this->assertTrue($this->manager->isProviderConfigured('mpesa'));
+    }
+
+    // ─── New Provider Drivers ──────────────────────────────────────────
+
+    public function test_airtel_driver_creates_provider(): void
+    {
+        $this->app['config']->set('billing.providers.airtel', [
+            'client_id' => 'test_id',
+            'client_secret' => 'test_secret',
+        ]);
+
+        $driver = $this->manager->driver('airtel');
+
+        $this->assertInstanceOf(AirtelMoneyProvider::class, $driver);
+        $this->assertEquals('airtel', $driver->getName());
+    }
+
+    public function test_kcb_driver_creates_provider(): void
+    {
+        $this->app['config']->set('billing.providers.kcb', [
+            'api_key' => 'test_key',
+            'api_secret' => 'test_secret',
+        ]);
+
+        $driver = $this->manager->driver('kcb');
+
+        $this->assertInstanceOf(KcbBuniProvider::class, $driver);
+        $this->assertEquals('kcb', $driver->getName());
+    }
+
+    public function test_jenga_driver_creates_provider(): void
+    {
+        $this->app['config']->set('billing.providers.jenga', [
+            'api_key' => 'test_key',
+            'consumer_secret' => 'test_secret',
+            'merchant_code' => 'MERCH001',
+        ]);
+
+        $driver = $this->manager->driver('jenga');
+
+        $this->assertInstanceOf(JengaProvider::class, $driver);
+        $this->assertEquals('jenga', $driver->getName());
+    }
+
+    public function test_coopbank_driver_creates_provider(): void
+    {
+        $this->app['config']->set('billing.providers.coopbank', [
+            'consumer_key' => 'test_key',
+            'consumer_secret' => 'test_secret',
+        ]);
+
+        $driver = $this->manager->driver('coopbank');
+
+        $this->assertInstanceOf(CoopBankProvider::class, $driver);
+        $this->assertEquals('coopbank', $driver->getName());
+    }
+
+    public function test_stanbic_driver_creates_provider(): void
+    {
+        $this->app['config']->set('billing.providers.stanbic', [
+            'api_key' => 'test_key',
+            'api_secret' => 'test_secret',
+        ]);
+
+        $driver = $this->manager->driver('stanbic');
+
+        $this->assertInstanceOf(StanbicProvider::class, $driver);
+        $this->assertEquals('stanbic', $driver->getName());
+    }
+
+    public function test_ncba_driver_creates_provider(): void
+    {
+        $this->app['config']->set('billing.providers.ncba', [
+            'api_key' => 'test_key',
+        ]);
+
+        $driver = $this->manager->driver('ncba');
+
+        $this->assertInstanceOf(NcbaProvider::class, $driver);
+        $this->assertEquals('ncba', $driver->getName());
+    }
+
+    // ─── New Provider Configuration Checks ─────────────────────────────
+
+    public function test_is_provider_configured_airtel(): void
+    {
+        $this->app['config']->set('billing.providers.airtel', [
+            'client_id' => 'test',
+            'client_secret' => 'test',
+        ]);
+
+        $this->assertTrue($this->manager->isProviderConfigured('airtel'));
+    }
+
+    public function test_is_provider_not_configured_airtel(): void
+    {
+        $this->assertFalse($this->manager->isProviderConfigured('airtel'));
+    }
+
+    public function test_is_provider_configured_kcb(): void
+    {
+        $this->app['config']->set('billing.providers.kcb', [
+            'api_key' => 'test',
+            'api_secret' => 'test',
+        ]);
+
+        $this->assertTrue($this->manager->isProviderConfigured('kcb'));
+    }
+
+    public function test_is_provider_configured_ncba(): void
+    {
+        $this->app['config']->set('billing.providers.ncba', [
+            'api_key' => 'test',
+        ]);
+
+        $this->assertTrue($this->manager->isProviderConfigured('ncba'));
     }
 }

@@ -2,7 +2,7 @@
 
 Feature-based subscription billing for Laravel with first-class African payment provider support.
 
-Define plans, gate features, track usage, accept payments via M-Pesa, Paystack, Flutterwave, or Pesapal — all through one package.
+Define plans, gate features, track usage, accept payments via M-Pesa, Airtel Money, KCB, Equity, Co-op Bank, Stanbic, NCBA, Paystack, Flutterwave, or Pesapal — all through one package.
 
 ---
 
@@ -14,7 +14,7 @@ This package gives you:
 
 - **Feature gating** — gate routes by feature slug, not plan name. Plans are just bundles of features.
 - **Usage metering** — track and enforce limits on metered features (API calls, OCR scans, entries/month)
-- **Provider-agnostic payments** — M-Pesa STK Push, Paystack, Flutterwave, Pesapal, or manual/cash — all behind one interface
+- **Provider-agnostic payments** — M-Pesa, Airtel Money, KCB BUNI, Equity Jenga, Co-op Bank, Stanbic, NCBA, Paystack, Flutterwave, Pesapal, or manual/cash — 11 providers behind one interface
 - **Subscription lifecycle** — trials, renewals, cancellation, pause/resume, plan upgrades with proration
 - **Invoicing** — auto-generated invoices with line items, tax calculation, sequential numbering
 - **Full REST API** — 32 endpoints for managing plans, subscriptions, usage, payments, and invoices
@@ -184,6 +184,26 @@ $result = $manager->driver()->charge(750000, 'KES', [
 $result = $manager->driver('paystack')->charge(750000, 'KES', [
     'email' => 'customer@example.com',
 ]);
+
+// Collect via KCB BUNI (M-Pesa, Airtel, T-Kash, VOOMA, or bank)
+$result = $manager->driver('kcb')->charge(50000, 'KES', [
+    'phone' => '0712345678',
+    'payment_channel' => 'mpesa',  // mpesa, airtel, tkash, vooma, bank
+    'reference' => 'INV-001',
+]);
+
+// Collect via Airtel Money
+$result = $manager->driver('airtel')->charge(50000, 'KES', [
+    'phone' => '0733123456',
+    'reference' => 'INV-002',
+]);
+
+// Transfer via Co-op Bank PesaLink (to any Kenyan bank)
+$result = $manager->driver('coopbank')->charge(100000, 'KES', [
+    'destination_account' => '0011547896523',
+    'bank_code' => '01',           // KCB
+    'transfer_type' => 'pesalink',
+]);
 ```
 
 ### 9. Generate Invoices
@@ -219,7 +239,7 @@ The package ships with a full REST API. All endpoints are documented in [docs/AP
 | Usage | 3 | Summary, detail, record |
 | Payments | 4 | List, initiate, show, refund |
 | Invoices | 6 | List, create, show, send, void, mark-paid |
-| Webhooks | 4 | M-Pesa, Paystack, Flutterwave, Pesapal callbacks |
+| Webhooks | 10 | M-Pesa, Paystack, Flutterwave, Pesapal, Airtel, KCB, Jenga, Co-op, Stanbic, NCBA callbacks |
 
 Routes are configurable:
 
@@ -237,13 +257,21 @@ Routes are configurable:
 
 ## Payment Providers
 
-| Provider | Status | Payment Methods |
+| Provider | Driver | Payment Methods |
 |----------|--------|-----------------|
-| **M-Pesa** | Planned (Phase 3) | STK Push, C2B, B2C |
-| **Paystack** | Planned (Phase 3) | Cards, bank, mobile money |
-| **Flutterwave** | Planned (Phase 3) | Cards, M-Pesa, MTN MoMo, bank |
-| **Pesapal** | Planned (Phase 3) | Cards, M-Pesa, Airtel Money |
-| **Manual** | Available | Cash, bank transfer, cheque |
+| **M-Pesa** | `mpesa` | STK Push, C2B, B2C |
+| **Airtel Money** | `airtel` | C2B collections, B2C disbursements |
+| **KCB BUNI** | `kcb` | M-Pesa, Airtel, T-Kash, VOOMA, bank (multi-channel) |
+| **Equity Jenga** | `jenga` | Cards, mobile money, bank transfers |
+| **Co-op Bank** | `coopbank` | PesaLink (any bank), internal transfers, balance queries |
+| **Stanbic Bank** | `stanbic` | STK Push, mobile money, bank transfers |
+| **NCBA** | `ncba` | PesaLink, IPN Push |
+| **Paystack** | `paystack` | Cards, bank, mobile money |
+| **Flutterwave** | `flutterwave` | Cards, M-Pesa, MTN MoMo, bank |
+| **Pesapal** | `pesapal` | Cards, M-Pesa, Airtel Money |
+| **Manual** | `manual` | Cash, bank transfer, cheque |
+
+Providers without direct APIs (Telkom T-Kash, Family Bank, DTB) can be accessed through KCB BUNI, Pesapal, or Flutterwave. See [docs/PROVIDERS.md](docs/PROVIDERS.md) for full integration guides.
 
 All providers implement `PaymentProviderInterface`:
 
@@ -348,6 +376,7 @@ return [
             'shortcode' => env('MPESA_SHORTCODE'),
             // ...
         ],
+        // airtel, kcb, jenga, coopbank, stanbic, ncba,
         // paystack, flutterwave, pesapal, manual
     ],
 ];
@@ -393,11 +422,15 @@ composer install
 vendor/bin/phpunit
 ```
 
-**22 tests, 52 assertions** covering:
+**648 tests, 1,667 assertions** covering:
 - Plan CRUD, feature checking, limits
 - Subscription lifecycle (create, trial, cancel, pause/resume)
 - Feature gating via Billable trait
 - Usage recording, deduplication, limit enforcement
+- All 11 payment providers (charge, refund, status, webhooks)
+- Invoice generation, tax calculation, proration
+- Coupon and promotion code logic
+- Admin bypass, encryption, event dispatching
 
 ---
 

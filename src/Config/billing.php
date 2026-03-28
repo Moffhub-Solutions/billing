@@ -20,7 +20,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | The default payment provider to use when none is specified.
-    | Supported: "mpesa", "paystack", "flutterwave", "pesapal", "manual"
+    | Supported: "mpesa", "paystack", "flutterwave", "pesapal", "airtel",
+    |           "kcb", "jenga", "coopbank", "stanbic", "ncba", "manual"
     |
     */
     'default_provider' => env('BILLING_PROVIDER', 'mpesa'),
@@ -185,6 +186,61 @@ return [
             'callback_url' => env('PESAPAL_CALLBACK_URL'),
             'base_url' => env('PESAPAL_BASE_URL'), // auto-set based on environment if null
             'ipn_id' => env('PESAPAL_IPN_ID'), // from RegisterIPN — call once and store
+        ],
+
+        'airtel' => [
+            'client_id' => env('AIRTEL_CLIENT_ID'),
+            'client_secret' => env('AIRTEL_CLIENT_SECRET'),
+            'environment' => env('AIRTEL_ENVIRONMENT', 'sandbox'), // sandbox or production
+            'callback_url' => env('AIRTEL_CALLBACK_URL'),
+            'base_url' => env('AIRTEL_BASE_URL'), // auto-set based on environment if null
+            'country' => env('AIRTEL_COUNTRY', 'KE'),
+            'currency' => env('AIRTEL_CURRENCY', 'KES'),
+        ],
+
+        'kcb' => [
+            'api_key' => env('KCB_API_KEY'),
+            'api_secret' => env('KCB_API_SECRET'),
+            'environment' => env('KCB_ENVIRONMENT', 'sandbox'), // sandbox or production
+            'callback_url' => env('KCB_CALLBACK_URL'),
+            'base_url' => env('KCB_BASE_URL'), // auto-set based on environment if null
+            'merchant_code' => env('KCB_MERCHANT_CODE'),
+        ],
+
+        'jenga' => [
+            'api_key' => env('JENGA_API_KEY'),
+            'merchant_code' => env('JENGA_MERCHANT_CODE'),
+            'consumer_secret' => env('JENGA_CONSUMER_SECRET'),
+            'private_key_path' => env('JENGA_PRIVATE_KEY_PATH'), // path to PEM file for SHA-256 signing
+            'environment' => env('JENGA_ENVIRONMENT', 'sandbox'), // sandbox or production
+            'callback_url' => env('JENGA_CALLBACK_URL'),
+            'base_url' => env('JENGA_BASE_URL'), // auto-set based on environment if null
+        ],
+
+        'coopbank' => [
+            'consumer_key' => env('COOPBANK_CONSUMER_KEY'),
+            'consumer_secret' => env('COOPBANK_CONSUMER_SECRET'),
+            'account_number' => env('COOPBANK_ACCOUNT_NUMBER'),
+            'environment' => env('COOPBANK_ENVIRONMENT', 'sandbox'), // sandbox or production
+            'callback_url' => env('COOPBANK_CALLBACK_URL'),
+            'base_url' => env('COOPBANK_BASE_URL'), // auto-set based on environment if null
+        ],
+
+        'stanbic' => [
+            'api_key' => env('STANBIC_API_KEY'),
+            'api_secret' => env('STANBIC_API_SECRET'),
+            'environment' => env('STANBIC_ENVIRONMENT', 'sandbox'), // sandbox or production
+            'callback_url' => env('STANBIC_CALLBACK_URL'),
+            'base_url' => env('STANBIC_BASE_URL'), // auto-set based on environment if null
+            'merchant_code' => env('STANBIC_MERCHANT_CODE'),
+        ],
+
+        'ncba' => [
+            'api_key' => env('NCBA_API_KEY'),
+            'api_secret' => env('NCBA_API_SECRET'),
+            'environment' => env('NCBA_ENVIRONMENT', 'sandbox'), // sandbox or production
+            'callback_url' => env('NCBA_CALLBACK_URL'),
+            'base_url' => env('NCBA_BASE_URL'), // auto-set based on environment if null
         ],
 
         'manual' => [
