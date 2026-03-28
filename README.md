@@ -2,7 +2,7 @@
 
 Feature-based subscription billing for Laravel with first-class African payment provider support.
 
-Define plans, gate features, track usage, accept payments via M-Pesa, Airtel Money, KCB, Equity, Co-op Bank, Stanbic, NCBA, Paystack, Flutterwave, or Pesapal — all through one package.
+Define plans, gate features, track usage, accept payments via M-Pesa, Airtel Money, KCB, Equity, Co-op Bank, Stanbic, NCBA, IntaSend, Paystack, Flutterwave, or Pesapal — all through one package.
 
 ---
 
@@ -14,7 +14,7 @@ This package gives you:
 
 - **Feature gating** — gate routes by feature slug, not plan name. Plans are just bundles of features.
 - **Usage metering** — track and enforce limits on metered features (API calls, OCR scans, entries/month)
-- **Provider-agnostic payments** — M-Pesa, Airtel Money, KCB BUNI, Equity Jenga, Co-op Bank, Stanbic, NCBA, Paystack, Flutterwave, Pesapal, or manual/cash — 11 providers behind one interface
+- **Provider-agnostic payments** — M-Pesa, Airtel Money, KCB BUNI, Equity Jenga, Co-op Bank, Stanbic, NCBA, IntaSend, Paystack, Flutterwave, Pesapal, or manual/cash — 12 providers behind one interface
 - **Subscription lifecycle** — trials, renewals, cancellation, pause/resume, plan upgrades with proration
 - **Invoicing** — auto-generated invoices with line items, tax calculation, sequential numbering
 - **Full REST API** — 32 endpoints for managing plans, subscriptions, usage, payments, and invoices
@@ -239,7 +239,7 @@ The package ships with a full REST API. All endpoints are documented in [docs/AP
 | Usage | 3 | Summary, detail, record |
 | Payments | 4 | List, initiate, show, refund |
 | Invoices | 6 | List, create, show, send, void, mark-paid |
-| Webhooks | 10 | M-Pesa, Paystack, Flutterwave, Pesapal, Airtel, KCB, Jenga, Co-op, Stanbic, NCBA callbacks |
+| Webhooks | 11 | M-Pesa, Paystack, Flutterwave, Pesapal, Airtel, KCB, Jenga, Co-op, Stanbic, NCBA, IntaSend callbacks |
 
 Routes are configurable:
 
@@ -266,6 +266,7 @@ Routes are configurable:
 | **Co-op Bank** | `coopbank` | PesaLink (any bank), internal transfers, balance queries |
 | **Stanbic Bank** | `stanbic` | STK Push, mobile money, bank transfers |
 | **NCBA** | `ncba` | PesaLink, IPN Push |
+| **IntaSend** | `intasend` | M-Pesa STK Push, cards, bank, PesaLink |
 | **Paystack** | `paystack` | Cards, bank, mobile money |
 | **Flutterwave** | `flutterwave` | Cards, M-Pesa, MTN MoMo, bank |
 | **Pesapal** | `pesapal` | Cards, M-Pesa, Airtel Money |
@@ -376,7 +377,7 @@ return [
             'shortcode' => env('MPESA_SHORTCODE'),
             // ...
         ],
-        // airtel, kcb, jenga, coopbank, stanbic, ncba,
+        // airtel, kcb, jenga, coopbank, stanbic, ncba, intasend,
         // paystack, flutterwave, pesapal, manual
     ],
 ];
@@ -422,12 +423,12 @@ composer install
 vendor/bin/phpunit
 ```
 
-**648 tests, 1,667 assertions** covering:
+**670 tests, 1,713 assertions** covering:
 - Plan CRUD, feature checking, limits
 - Subscription lifecycle (create, trial, cancel, pause/resume)
 - Feature gating via Billable trait
 - Usage recording, deduplication, limit enforcement
-- All 11 payment providers (charge, refund, status, webhooks)
+- All 12 payment providers (charge, refund, status, webhooks)
 - Invoice generation, tax calculation, proration
 - Coupon and promotion code logic
 - Admin bypass, encryption, event dispatching

@@ -97,6 +97,14 @@ class WebhookController extends Controller
     }
 
     /**
+     * Handle IntaSend webhook.
+     */
+    public function intasend(Request $request): JsonResponse
+    {
+        return $this->handleWebhook($request, 'intasend');
+    }
+
+    /**
      * Process a webhook from any provider.
      */
     protected function handleWebhook(Request $request, string $providerName): JsonResponse

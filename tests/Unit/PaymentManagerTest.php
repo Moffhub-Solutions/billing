@@ -8,6 +8,7 @@ use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\PaymentManager;
 use Moffhub\Billing\Providers\AirtelMoneyProvider;
 use Moffhub\Billing\Providers\CoopBankProvider;
+use Moffhub\Billing\Providers\IntaSendProvider;
 use Moffhub\Billing\Providers\JengaProvider;
 use Moffhub\Billing\Providers\KcbBuniProvider;
 use Moffhub\Billing\Providers\ManualProvider;
@@ -80,8 +81,9 @@ class PaymentManagerTest extends BaseTestCase
         $this->assertContains('coopbank', $providers);
         $this->assertContains('stanbic', $providers);
         $this->assertContains('ncba', $providers);
+        $this->assertContains('intasend', $providers);
         $this->assertContains('manual', $providers);
-        $this->assertCount(11, $providers);
+        $this->assertCount(12, $providers);
     }
 
     public function test_is_provider_configured_manual(): void
@@ -219,5 +221,33 @@ class PaymentManagerTest extends BaseTestCase
         ]);
 
         $this->assertTrue($this->manager->isProviderConfigured('ncba'));
+    }
+
+    public function test_intasend_driver_creates_provider(): void
+    {
+        $this->app['config']->set('billing.providers.intasend', [
+            'publishable_key' => 'ISPubKey_test_123',
+            'secret_key' => 'ISSecretKey_test_123',
+        ]);
+
+        $driver = $this->manager->driver('intasend');
+
+        $this->assertInstanceOf(IntaSendProvider::class, $driver);
+        $this->assertEquals('intasend', $driver->getName());
+    }
+
+    public function test_is_provider_configured_intasend(): void
+    {
+        $this->app['config']->set('billing.providers.intasend', [
+            'publishable_key' => 'test',
+            'secret_key' => 'test',
+        ]);
+
+        $this->assertTrue($this->manager->isProviderConfigured('intasend'));
+    }
+
+    public function test_is_provider_not_configured_intasend(): void
+    {
+        $this->assertFalse($this->manager->isProviderConfigured('intasend'));
     }
 }

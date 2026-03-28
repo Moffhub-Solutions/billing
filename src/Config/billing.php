@@ -21,7 +21,7 @@ return [
     |
     | The default payment provider to use when none is specified.
     | Supported: "mpesa", "paystack", "flutterwave", "pesapal", "airtel",
-    |           "kcb", "jenga", "coopbank", "stanbic", "ncba", "manual"
+    |           "kcb", "jenga", "coopbank", "stanbic", "ncba", "intasend", "manual"
     |
     */
     'default_provider' => env('BILLING_PROVIDER', 'mpesa'),
@@ -241,6 +241,14 @@ return [
             'environment' => env('NCBA_ENVIRONMENT', 'sandbox'), // sandbox or production
             'callback_url' => env('NCBA_CALLBACK_URL'),
             'base_url' => env('NCBA_BASE_URL'), // auto-set based on environment if null
+        ],
+
+        'intasend' => [
+            'publishable_key' => env('INTASEND_PUBLISHABLE_KEY'),
+            'secret_key' => env('INTASEND_SECRET_KEY'),
+            'environment' => env('INTASEND_ENVIRONMENT', 'sandbox'), // sandbox or production
+            'callback_url' => env('INTASEND_CALLBACK_URL'),
+            'base_url' => env('INTASEND_BASE_URL'), // auto-set based on environment if null
         ],
 
         'manual' => [

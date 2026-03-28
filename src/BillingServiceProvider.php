@@ -165,6 +165,7 @@ class BillingServiceProvider extends ServiceProvider
                 Route::post('/coopbank', [WebhookController::class, 'coopbank'])->name('billing.webhooks.coopbank');
                 Route::post('/stanbic', [WebhookController::class, 'stanbic'])->name('billing.webhooks.stanbic');
                 Route::post('/ncba', [WebhookController::class, 'ncba'])->name('billing.webhooks.ncba');
+                Route::post('/intasend', [WebhookController::class, 'intasend'])->name('billing.webhooks.intasend');
             });
     }
 
@@ -205,7 +206,7 @@ class BillingServiceProvider extends ServiceProvider
     protected function validateConfig(): void
     {
         $provider = config('billing.default_provider');
-        $validProviders = ['mpesa', 'paystack', 'flutterwave', 'pesapal', 'airtel', 'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba', 'manual'];
+        $validProviders = ['mpesa', 'paystack', 'flutterwave', 'pesapal', 'airtel', 'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba', 'intasend', 'manual'];
 
         if ($provider && ! in_array($provider, $validProviders, true)) {
             Log::warning("Billing: Unrecognized default provider '{$provider}'. Valid providers: ".implode(', ', $validProviders));

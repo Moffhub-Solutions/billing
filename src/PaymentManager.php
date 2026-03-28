@@ -10,6 +10,7 @@ use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Providers\AirtelMoneyProvider;
 use Moffhub\Billing\Providers\CoopBankProvider;
 use Moffhub\Billing\Providers\FlutterwaveProvider;
+use Moffhub\Billing\Providers\IntaSendProvider;
 use Moffhub\Billing\Providers\JengaProvider;
 use Moffhub\Billing\Providers\KcbBuniProvider;
 use Moffhub\Billing\Providers\ManualProvider;
@@ -203,6 +204,22 @@ class PaymentManager extends Manager
     }
 
     /**
+     * Create the IntaSend payment driver.
+     */
+    public function createIntasendDriver(): PaymentProviderInterface
+    {
+        $config = $this->app['config']['billing.providers.intasend'] ?? [];
+
+        return new IntaSendProvider(
+            publishableKey: $config['publishable_key'] ?? '',
+            secretKey: $config['secret_key'] ?? '',
+            environment: $config['environment'] ?? 'sandbox',
+            callbackUrl: $config['callback_url'] ?? '',
+            baseUrl: $config['base_url'] ?? null,
+        );
+    }
+
+    /**
      * Create the manual/offline payment driver.
      */
     public function createManualDriver(): PaymentProviderInterface
@@ -222,7 +239,7 @@ class PaymentManager extends Manager
      */
     public function getAvailableProviders(): array
     {
-        return ['mpesa', 'paystack', 'flutterwave', 'pesapal', 'airtel', 'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba', 'manual'];
+        return ['mpesa', 'paystack', 'flutterwave', 'pesapal', 'airtel', 'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba', 'intasend', 'manual'];
     }
 
     /**
@@ -243,6 +260,7 @@ class PaymentManager extends Manager
             'coopbank' => ! empty($config['consumer_key']) && ! empty($config['consumer_secret']),
             'stanbic' => ! empty($config['api_key']) && ! empty($config['api_secret']),
             'ncba' => ! empty($config['api_key']),
+            'intasend' => ! empty($config['publishable_key']) && ! empty($config['secret_key']),
             'manual' => true,
             default => false,
         };
