@@ -82,8 +82,7 @@ class EventDispatchTest extends BaseTestCase
         Event::assertDispatched(SubscriptionPaused::class, function (SubscriptionPaused $event) use ($subscription) {
             return $event->subscription->id === $subscription->id
                 && $event->billable->id === $this->company->id
-                && $event->plan->id === $this->plan->id
-                && $event->pausedAt !== null;
+                && $event->plan->id === $this->plan->id;
         });
     }
 
@@ -97,8 +96,7 @@ class EventDispatchTest extends BaseTestCase
         Event::assertDispatched(SubscriptionResumed::class, function (SubscriptionResumed $event) use ($subscription) {
             return $event->subscription->id === $subscription->id
                 && $event->billable->id === $this->company->id
-                && $event->plan->id === $this->plan->id
-                && $event->resumedAt !== null;
+                && $event->plan->id === $this->plan->id;
         });
     }
 

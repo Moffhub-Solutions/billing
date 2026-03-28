@@ -277,7 +277,7 @@ class KcbBuniProvider extends BasePaymentProvider
      * to implement your validation logic.
      *
      * @param  callable(string $customerReference, string $organizationReference): array  $validator
-     *     Should return: ['valid' => bool, 'customer_name' => string, 'amount' => int (cents), 'bill_type' => string]
+     *                                                                                                Should return: ['valid' => bool, 'customer_name' => string, 'amount' => int (cents), 'bill_type' => string]
      */
     public function handleValidation(Request $request, callable $validator): array
     {
