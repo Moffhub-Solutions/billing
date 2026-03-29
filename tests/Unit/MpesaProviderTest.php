@@ -458,4 +458,93 @@ class MpesaProviderTest extends BaseTestCase
         $this->assertEquals('mpesa', $driver->getName());
         $this->assertTrue($driver->isConfigured());
     }
+
+    // ─── C2B Simulate ──────────────────────────────────────────────────
+
+    public function test_simulate_c2b_success(): void
+    {
+        Cache::flush();
+
+        Http::fake([
+            '*/oauth/v1/generate*' => Http::response(['access_token' => 'test_token']),
+            '*/mpesa/c2b/v1/simulate' => Http::response([
+                'ResponseCode' => '0',
+                'ResponseDescription' => 'Accept the service request successfully.',
+            ]),
+        ]);
+
+        $result = $this->provider->simulateC2b(
+            phone: '0712345678',
+            amount: 500,
+            billRefNumber: 'INV-001',
+        );
+
+        $this->assertTrue($result['success']);
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'c2b/v1/simulate')
+                && $request['Amount'] === 500
+                && $request['BillRefNumber'] === 'INV-001';
+        });
+    }
+
+    public function test_simulate_c2b_buy_goods(): void
+    {
+        Cache::flush();
+
+        Http::fake([
+            '*/oauth/v1/generate*' => Http::response(['access_token' => 'test_token']),
+            '*/mpesa/c2b/v1/simulate' => Http::response([
+                'ResponseCode' => '0',
+            ]),
+        ]);
+
+        $result = $this->provider->simulateC2b(
+            phone: '0712345678',
+            amount: 1000,
+            commandId: 'CustomerBuyGoodsOnline',
+        );
+
+        $this->assertTrue($result['success']);
+    }
+
+    // ─── C2B Validation Handler ────────────────────────────────────────
+
+    public function test_handle_c2b_validation_accepted(): void
+    {
+        $request = Request::create('/validation', 'POST', [
+            'TransactionType' => 'Pay Bill',
+            'TransID' => 'RKTQDM7W6S',
+            'TransTime' => '20191122063845',
+            'TransAmount' => '10',
+            'BusinessShortCode' => '600638',
+            'BillRefNumber' => 'INV-001',
+            'MSISDN' => '254708374149',
+            'FirstName' => 'John',
+            'LastName' => 'Doe',
+        ]);
+
+        $response = $this->provider->handleC2bValidation($request, function (array $data) {
+            return $data['BillRefNumber'] === 'INV-001';
+        });
+
+        $this->assertEquals('0', $response['ResultCode']);
+        $this->assertEquals('Accepted', $response['ResultDesc']);
+    }
+
+    public function test_handle_c2b_validation_rejected(): void
+    {
+        $request = Request::create('/validation', 'POST', [
+            'TransactionType' => 'Pay Bill',
+            'TransID' => 'RKTQDM7W6S',
+            'BillRefNumber' => 'UNKNOWN',
+            'MSISDN' => '254708374149',
+        ]);
+
+        $response = $this->provider->handleC2bValidation($request, function (array $data) {
+            return false; // reject everything
+        });
+
+        $this->assertEquals('C2B00012', $response['ResultCode']);
+        $this->assertEquals('Rejected', $response['ResultDesc']);
+    }
 }

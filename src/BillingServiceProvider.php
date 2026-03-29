@@ -92,6 +92,7 @@ class BillingServiceProvider extends ServiceProvider
                 Console\Commands\BillingHealthCommand::class,
                 Console\Commands\ProcessRenewalsCommand::class,
                 Console\Commands\ProcessInvoicesCommand::class,
+                Console\Commands\MpesaSetupCommand::class,
             ]);
         }
 

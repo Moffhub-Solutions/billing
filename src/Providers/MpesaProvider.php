@@ -263,6 +263,62 @@ class MpesaProvider extends BasePaymentProvider
         return $response->json() ?? [];
     }
 
+    /**
+     * Simulate a C2B payment (sandbox only).
+     *
+     * Triggers a fake customer-to-business payment for testing.
+     * This calls the validation → confirmation flow just like a real paybill payment.
+     */
+    public function simulateC2b(
+        string $phone,
+        int $amount,
+        string $billRefNumber = '',
+        string $commandId = 'CustomerPayBillOnline',
+    ): array {
+        $token = $this->getAccessToken();
+
+        $payload = [
+            'ShortCode' => $this->shortcode,
+            'CommandID' => $commandId, // CustomerPayBillOnline or CustomerBuyGoodsOnline
+            'Amount' => $amount,
+            'Msisdn' => $this->formatPhone($phone),
+            'BillRefNumber' => $billRefNumber,
+        ];
+
+        $this->logRequest('POST', $this->baseUrl.'/mpesa/c2b/v1/simulate', $payload);
+
+        $response = Http::withToken($token)
+            ->post($this->baseUrl.'/mpesa/c2b/v1/simulate', $payload);
+
+        $data = $response->json() ?? [];
+
+        return [
+            'success' => ($data['ResponseCode'] ?? '') === '0',
+            'metadata' => $data,
+        ];
+    }
+
+    /**
+     * Handle C2B validation callback.
+     *
+     * Safaricom sends a validation request before accepting a C2B payment.
+     * Pass a validator callable to accept or reject the payment.
+     *
+     * @param  callable(array $data): bool  $validator
+     *                                                  Receives the full C2B payload. Return true to accept, false to reject.
+     * @return array Response to send back to Safaricom
+     */
+    public function handleC2bValidation(Request $request, callable $validator): array
+    {
+        $data = $request->all();
+        $accepted = $validator($data);
+
+        return [
+            'ResultCode' => $accepted ? '0' : 'C2B00012',
+            'ResultDesc' => $accepted ? 'Accepted' : 'Rejected',
+        ];
+    }
+
     // ─── B2C (Business to Customer — refunds/disbursements) ────────────
 
     /**
