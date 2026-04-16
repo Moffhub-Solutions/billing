@@ -12,6 +12,30 @@ use Moffhub\Billing\Database\Factories\PaymentFactory;
 use Moffhub\Billing\Enums\PaymentMethod;
 use Moffhub\Billing\Enums\PaymentStatus;
 
+/**
+ * @property int $id
+ * @property string $ulid
+ * @property string $billable_type
+ * @property int $billable_id
+ * @property int|null $subscription_id
+ * @property int|null $invoice_id
+ * @property int $amount
+ * @property string $currency
+ * @property PaymentStatus $status
+ * @property string|null $payment_provider
+ * @property string|null $provider_payment_id
+ * @property string|null $provider_reference
+ * @property PaymentMethod|null $payment_method
+ * @property array<string, mixed>|null $metadata
+ * @property \Illuminate\Support\Carbon|null $paid_at
+ * @property \Illuminate\Support\Carbon|null $failed_at
+ * @property \Illuminate\Support\Carbon|null $refunded_at
+ * @property \Illuminate\Support\Carbon $created_at
+ * @property \Illuminate\Support\Carbon $updated_at
+ * @property-read \Illuminate\Database\Eloquent\Model $billable
+ * @property-read Subscription|null $subscription
+ * @property-read Invoice|null $invoice
+ */
 class Payment extends Model
 {
     /** @use HasFactory<PaymentFactory> */

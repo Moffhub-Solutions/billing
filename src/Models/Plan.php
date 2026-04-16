@@ -11,6 +11,25 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Moffhub\Billing\Database\Factories\PlanFactory;
 use Moffhub\Billing\Enums\BillingCycle;
 
+/**
+ * @property int $id
+ * @property string $ulid
+ * @property string $name
+ * @property string $slug
+ * @property string|null $description
+ * @property int $base_price
+ * @property string $currency
+ * @property BillingCycle $billing_cycle
+ * @property int|null $trial_days
+ * @property bool $is_active
+ * @property int $sort_order
+ * @property array<int, string>|null $features
+ * @property array<string, int>|null $limits
+ * @property array<string, mixed>|null $metadata
+ * @property \Illuminate\Support\Carbon $created_at
+ * @property \Illuminate\Support\Carbon $updated_at
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Subscription> $subscriptions
+ */
 class Plan extends Model
 {
     /** @use HasFactory<PlanFactory> */
@@ -98,7 +117,6 @@ class Plan extends Model
             BillingCycle::MONTHLY => $this->base_price,
             BillingCycle::QUARTERLY => (int) round($this->base_price / 3),
             BillingCycle::ANNUAL => (int) round($this->base_price / 12),
-            default => $this->base_price,
         };
     }
 }

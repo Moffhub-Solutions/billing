@@ -26,7 +26,12 @@ class ProcessRenewals implements ShouldQueue
 
     public function handle(PaymentManager $paymentManager): void
     {
+        // Cancelled subscriptions with `cancel(immediately: false)` keep
+        // `status = ACTIVE` until the period ends. Without the cancelled_at
+        // filter, this job would happily charge a customer who explicitly
+        // cancelled — see `Subscription::onGracePeriod()`.
         $subscriptions = Subscription::where('status', SubscriptionStatus::ACTIVE)
+            ->whereNull('cancelled_at')
             ->where('current_period_end', '<=', now())
             ->with(['plan', 'billable'])
             ->get();
@@ -41,10 +46,11 @@ class ProcessRenewals implements ShouldQueue
         $plan = $subscription->plan;
         $provider = $subscription->payment_provider ?? $paymentManager->getDefaultDriver();
         $currency = config('billing.currency', 'KES');
+        $amount = $this->renewalAmount($subscription);
 
         try {
             $driver = $paymentManager->driver($provider);
-            $result = $driver->charge($plan->base_price, $currency, [
+            $result = $driver->charge($amount, $currency, [
                 'subscription_id' => $subscription->id,
                 'description' => "Renewal for {$plan->name}",
             ]);
@@ -60,7 +66,7 @@ class ProcessRenewals implements ShouldQueue
                 $payment = new Payment([
                     'ulid' => Str::ulid()->toBase32(),
                     'subscription_id' => $subscription->id,
-                    'amount' => $plan->base_price,
+                    'amount' => $amount,
                     'currency' => $currency,
                     'status' => PaymentStatus::COMPLETED,
                     'payment_provider' => $provider,
@@ -78,27 +84,45 @@ class ProcessRenewals implements ShouldQueue
                     $plan,
                     $subscription->current_period_start,
                     $subscription->current_period_end,
-                    $plan->base_price,
+                    $amount,
                     $currency,
                 );
 
                 // Reset usage for the new period
                 $this->resetUsage($subscription);
             } else {
-                $this->handleFailure($subscription, $provider, $currency, $result);
+                $this->handleFailure($subscription, $provider, $currency, $amount, $result);
             }
         } catch (\Throwable $e) {
             Log::error("Billing: Renewal failed for subscription {$subscription->id}", [
                 'error' => $e->getMessage(),
             ]);
 
-            $this->handleFailure($subscription, $provider, $currency, [
+            $this->handleFailure($subscription, $provider, $currency, $amount, [
                 'metadata' => ['error' => $e->getMessage()],
             ]);
         }
     }
 
-    protected function handleFailure(Subscription $subscription, string $provider, string $currency, array $result): void
+    /**
+     * Resolve the amount to charge for a renewal.
+     *
+     * Variable-priced subscriptions (per-stream, per-seat, per-MRR-tier) can
+     * persist their billable amount in `metadata.amount` at subscription
+     * creation. Fall back to the plan's base_price for flat-rate plans.
+     */
+    protected function renewalAmount(Subscription $subscription): int
+    {
+        $override = $subscription->metadata['amount'] ?? null;
+
+        if (is_int($override) || (is_numeric($override) && (int) $override == $override)) {
+            return (int) $override;
+        }
+
+        return (int) $subscription->plan->base_price;
+    }
+
+    protected function handleFailure(Subscription $subscription, string $provider, string $currency, int $amount, array $result): void
     {
         $subscription->update([
             'status' => SubscriptionStatus::PAST_DUE,
@@ -107,7 +131,7 @@ class ProcessRenewals implements ShouldQueue
         $payment = new Payment([
             'ulid' => Str::ulid()->toBase32(),
             'subscription_id' => $subscription->id,
-            'amount' => $subscription->plan->base_price,
+            'amount' => $amount,
             'currency' => $currency,
             'status' => PaymentStatus::FAILED,
             'payment_provider' => $provider,
@@ -120,7 +144,7 @@ class ProcessRenewals implements ShouldQueue
         PaymentFailed::dispatch(
             $payment,
             $subscription->billable,
-            $subscription->plan->base_price,
+            $amount,
             $currency,
             'Renewal charge failed',
         );

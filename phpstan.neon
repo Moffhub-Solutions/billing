@@ -9,8 +9,6 @@ parameters:
       - identifier: method.notFound
       - identifier: staticMethod.notFound
       - identifier: argument.templateType
-      - identifier: argument.unresolvableType
-      - identifier: method.unresolvableReturnType
       - identifier: staticProperty.notFound
       - identifier: property.notFound
       - identifier: nullsafe.neverNull

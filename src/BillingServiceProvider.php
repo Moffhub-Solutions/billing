@@ -6,6 +6,7 @@ namespace Moffhub\Billing;
 
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
@@ -16,6 +17,10 @@ use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Contracts\TaxCalculatorInterface;
 use Moffhub\Billing\Http\Controllers\UssdController;
 use Moffhub\Billing\Http\Controllers\WebhookController;
+use Moffhub\Billing\Http\Middleware\CheckFeatureAccess;
+use Moffhub\Billing\Http\Middleware\CheckPlanAccess;
+use Moffhub\Billing\Http\Middleware\CheckUsageLimit;
+use Moffhub\Billing\Http\Middleware\RequireSubscription;
 use Moffhub\Billing\Security\FieldEncryptor;
 use Moffhub\Billing\Services\BillingService;
 use Moffhub\Billing\Services\CouponService;
@@ -82,9 +87,10 @@ class BillingServiceProvider extends ServiceProvider
             __DIR__.'/Config/billing.php' => config_path('billing.php'),
         ], 'billing-config');
 
-        $this->publishesMigrations([
-            __DIR__.'/Database/Migrations' => database_path('migrations'),
-        ], 'billing-migrations');
+        $this->publishBillingMigrations(
+            __DIR__.'/Database/Migrations',
+            database_path('migrations'),
+        );
 
         if ($this->app->runningInConsole()) {
             $this->commands([
@@ -98,10 +104,116 @@ class BillingServiceProvider extends ServiceProvider
 
         $this->validateConfig();
         $this->configureRateLimiting();
+        $this->registerMiddleware();
         $this->registerRoutes();
         $this->registerWebhookRoutes();
         $this->registerUssdRoutes();
         $this->registerBladeDirectives();
+    }
+
+    /**
+     * Register the package's middleware aliases on the router so consumers
+     * can use `subscribed`, `feature:`, `plan:`, and `usage:` directly in
+     * route definitions without manual wiring in their HTTP kernel.
+     */
+    protected function registerMiddleware(): void
+    {
+        $router = $this->app->make(Router::class);
+
+        $router->aliasMiddleware('subscribed', RequireSubscription::class);
+        $router->aliasMiddleware('feature', CheckFeatureAccess::class);
+        $router->aliasMiddleware('plan', CheckPlanAccess::class);
+        $router->aliasMiddleware('usage', CheckUsageLimit::class);
+    }
+
+    /**
+     * Canonical dependency order for the package's migrations.
+     *
+     * Sourced by table name suffix (everything after `create_billing_`).
+     * Each entry MUST come after every table its FKs reference. Two source
+     * files have FKs that contradict their numeric prefix:
+     *
+     *   - 000007_payments references `billing_invoices` (table from 000008)
+     *   - 000012_coupon_redemptions references `coupons`, but alphabetical
+     *     ordering on the published filename ranks `coupon_redemptions`
+     *     before `coupons` (the `_` comes before `s`).
+     *
+     * Listing the order explicitly here means we never have to rename or
+     * modify the shipped migration files — consumers who already published
+     * v0.0.3 keep their existing rows in the migrations table untouched.
+     *
+     * @var list<string>
+     */
+    protected const MIGRATION_ORDER = [
+        'plans',
+        'features',
+        'subscriptions',
+        'subscription_addons',
+        'usage_records',
+        'usage_events',
+        'invoices',
+        'invoice_items',
+        'payments',
+        'coupons',
+        'promotion_codes',
+        'coupon_redemptions',
+        'payment_tokens',
+    ];
+
+    /**
+     * Publish migrations with unique, dependency-correct timestamps.
+     *
+     * Laravel's stock `publishesMigrations()` strips the source migration's
+     * date prefix and replaces it with `now()->format('Y_m_d_His')`. Every
+     * file is published in the same second, so they all collide on the new
+     * timestamp and the migrator falls back to alphabetical order — at which
+     * point `coupon_redemptions` runs before `coupons`, `invoice_items` and
+     * `payments` run before `invoices`, and fresh `migrate` blows up on the
+     * missing FK target.
+     *
+     * Walk the source files in `MIGRATION_ORDER` instead of letting the
+     * filesystem dictate order, then assign each file a timestamp one second
+     * apart so the published filenames preserve dependency order even after
+     * Laravel's prefix-stripping.
+     */
+    protected function publishBillingMigrations(string $from, string $to): void
+    {
+        $available = [];
+
+        foreach (glob($from.DIRECTORY_SEPARATOR.'*.php') ?: [] as $file) {
+            $name = preg_replace('/^\d{4}_\d{2}_\d{2}_\d{6}_create_billing_/', '', basename($file, '.php'));
+            $name = preg_replace('/_table$/', '', $name);
+            $available[$name] = $file;
+        }
+
+        $now = now();
+        $paths = [];
+        $i = 0;
+
+        foreach (static::MIGRATION_ORDER as $table) {
+            if (! isset($available[$table])) {
+                continue;
+            }
+
+            $file = $available[$table];
+            $stripped = preg_replace('/^\d{4}_\d{2}_\d{2}_\d{6}_/', '', basename($file));
+            $timestamp = $now->copy()->addSeconds($i)->format('Y_m_d_His');
+            $paths[$file] = $to.DIRECTORY_SEPARATOR.$timestamp.'_'.$stripped;
+
+            unset($available[$table]);
+            $i++;
+        }
+
+        // Defensive: any new migration added to the package but missing from
+        // MIGRATION_ORDER still gets published, just appended at the end.
+        foreach ($available as $file) {
+            $stripped = preg_replace('/^\d{4}_\d{2}_\d{2}_\d{6}_/', '', basename($file));
+            $timestamp = $now->copy()->addSeconds($i)->format('Y_m_d_His');
+            $paths[$file] = $to.DIRECTORY_SEPARATOR.$timestamp.'_'.$stripped;
+            $i++;
+        }
+
+        $this->publishes($paths, 'billing-migrations');
     }
 
     /**

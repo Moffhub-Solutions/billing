@@ -35,7 +35,7 @@ class SyncPlansCommand extends Command
                 $plan->slug,
                 $plan->name,
                 number_format($plan->base_price / 100, 2),
-                $plan->billing_cycle?->value ?? '-',
+                $plan->billing_cycle->value,
                 $plan->is_active ? 'Yes' : 'No',
                 count($plan->features ?? []),
             ])->toArray(),

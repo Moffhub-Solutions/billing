@@ -15,6 +15,30 @@ use Moffhub\Billing\Enums\SubscriptionStatus;
 use Moffhub\Billing\Events\SubscriptionPaused;
 use Moffhub\Billing\Events\SubscriptionResumed;
 
+/**
+ * @property int $id
+ * @property string $ulid
+ * @property string $billable_type
+ * @property int $billable_id
+ * @property int $plan_id
+ * @property SubscriptionStatus $status
+ * @property \Illuminate\Support\Carbon|null $trial_ends_at
+ * @property \Illuminate\Support\Carbon|null $current_period_start
+ * @property \Illuminate\Support\Carbon|null $current_period_end
+ * @property \Illuminate\Support\Carbon|null $cancelled_at
+ * @property \Illuminate\Support\Carbon|null $paused_at
+ * @property \Illuminate\Support\Carbon|null $resumed_at
+ * @property string|null $payment_provider
+ * @property string|null $provider_subscription_id
+ * @property array<string, mixed>|null $metadata
+ * @property \Illuminate\Support\Carbon $created_at
+ * @property \Illuminate\Support\Carbon $updated_at
+ * @property-read \Illuminate\Database\Eloquent\Model $billable
+ * @property-read Plan $plan
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, SubscriptionAddon> $addons
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Payment> $payments
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Invoice> $invoices
+ */
 class Subscription extends Model
 {
     /** @use HasFactory<SubscriptionFactory> */
@@ -75,10 +99,14 @@ class Subscription extends Model
 
     /**
      * Check if this subscription is currently active (including trialing).
+     *
+     * An `ACTIVE` row whose `current_period_end` has already passed is not
+     * considered active — the renewal job hasn't run yet, but the customer's
+     * paid window is over. Callers should not gate features on it.
      */
     public function isActive(): bool
     {
-        return $this->status->isActive();
+        return $this->status->isActive() && ! $this->expired();
     }
 
     /**

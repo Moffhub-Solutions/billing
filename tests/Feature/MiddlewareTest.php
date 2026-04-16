@@ -14,6 +14,7 @@ use Moffhub\Billing\Exceptions\UsageLimitExceededException;
 use Moffhub\Billing\Http\Middleware\CheckFeatureAccess;
 use Moffhub\Billing\Http\Middleware\CheckPlanAccess;
 use Moffhub\Billing\Http\Middleware\CheckUsageLimit;
+use Moffhub\Billing\Http\Middleware\RequireSubscription;
 use Moffhub\Billing\Models\Feature;
 use Moffhub\Billing\Models\Plan;
 use Moffhub\Billing\Services\UsageService;
@@ -274,5 +275,68 @@ class MiddlewareTest extends BaseTestCase
 
         // Should pass because overage is allowed
         $this->assertEquals('OK', $response->getContent());
+    }
+
+    // ─── RequireSubscription Middleware ─────────────────────────────────
+
+    public function test_subscribed_middleware_passes_when_billable_has_active_subscription(): void
+    {
+        $this->company->subscribe('starter')->create();
+
+        $request = Request::create('/test');
+        $request->setUserResolver(fn () => $this->user);
+
+        config(['billing.billable_relation' => 'company']);
+
+        $middleware = new RequireSubscription;
+        $response = $middleware->handle($request, fn () => new Response('OK'));
+
+        $this->assertEquals('OK', $response->getContent());
+    }
+
+    public function test_subscribed_middleware_blocks_billable_with_no_subscription(): void
+    {
+        $request = Request::create('/test');
+        $request->setUserResolver(fn () => $this->user);
+
+        config(['billing.billable_relation' => 'company']);
+
+        $this->expectException(FeatureNotAvailableException::class);
+
+        $middleware = new RequireSubscription;
+        $middleware->handle($request, fn () => new Response('OK'));
+    }
+
+    public function test_subscribed_middleware_blocks_when_unauthenticated(): void
+    {
+        $request = Request::create('/test');
+        $request->setUserResolver(fn () => null);
+
+        $this->expectException(FeatureNotAvailableException::class);
+
+        $middleware = new RequireSubscription;
+        $middleware->handle($request, fn () => new Response('OK'));
+    }
+
+    public function test_subscribed_middleware_blocks_when_period_expired(): void
+    {
+        // Past current_period_end but row still says ACTIVE because the
+        // renewal job hasn't run. Middleware uses Subscription::isActive(),
+        // which now refuses expired rows.
+        $subscription = $this->company->subscribe('starter')->create();
+        $subscription->update([
+            'current_period_start' => now()->subDays(31),
+            'current_period_end' => now()->subDay(),
+        ]);
+
+        $request = Request::create('/test');
+        $request->setUserResolver(fn () => $this->user);
+
+        config(['billing.billable_relation' => 'company']);
+
+        $this->expectException(FeatureNotAvailableException::class);
+
+        $middleware = new RequireSubscription;
+        $middleware->handle($request, fn () => new Response('OK'));
     }
 }

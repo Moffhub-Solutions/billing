@@ -13,6 +13,30 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Moffhub\Billing\Database\Factories\InvoiceFactory;
 use Moffhub\Billing\Enums\InvoiceStatus;
 
+/**
+ * @property int $id
+ * @property string $ulid
+ * @property string $billable_type
+ * @property int $billable_id
+ * @property int|null $subscription_id
+ * @property string $number
+ * @property InvoiceStatus $status
+ * @property int $subtotal
+ * @property int $tax_amount
+ * @property int $total
+ * @property string $currency
+ * @property float $tax_rate
+ * @property \Illuminate\Support\Carbon|null $due_date
+ * @property \Illuminate\Support\Carbon|null $paid_at
+ * @property array<string, mixed>|null $metadata
+ * @property string|null $notes
+ * @property \Illuminate\Support\Carbon $created_at
+ * @property \Illuminate\Support\Carbon $updated_at
+ * @property-read \Illuminate\Database\Eloquent\Model $billable
+ * @property-read Subscription|null $subscription
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, InvoiceItem> $items
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Payment> $payments
+ */
 class Invoice extends Model
 {
     /** @use HasFactory<InvoiceFactory> */

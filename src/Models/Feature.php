@@ -11,6 +11,21 @@ use Moffhub\Billing\Database\Factories\FeatureFactory;
 use Moffhub\Billing\Enums\BillingCycle;
 use Moffhub\Billing\Enums\FeatureType;
 
+/**
+ * @property int $id
+ * @property string $slug
+ * @property string $name
+ * @property string|null $description
+ * @property string|null $category
+ * @property FeatureType $type
+ * @property bool $is_addon
+ * @property int|null $addon_price
+ * @property BillingCycle|null $addon_billing_cycle
+ * @property bool $is_active
+ * @property array<string, mixed>|null $metadata
+ * @property \Illuminate\Support\Carbon $created_at
+ * @property \Illuminate\Support\Carbon $updated_at
+ */
 class Feature extends Model
 {
     /** @use HasFactory<FeatureFactory> */

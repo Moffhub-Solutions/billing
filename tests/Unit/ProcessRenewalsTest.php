@@ -120,6 +120,59 @@ class ProcessRenewalsTest extends BaseTestCase
         Event::assertNotDispatched(PaymentFailed::class);
     }
 
+    public function test_skips_subscriptions_cancelled_during_grace_period(): void
+    {
+        // Regression: `cancel(immediately: false)` keeps `status = ACTIVE`
+        // until the period ends. Without filtering on `cancelled_at`, the
+        // renewal job would charge a customer who explicitly cancelled.
+        Event::fake([SubscriptionRenewed::class, PaymentFailed::class]);
+
+        $subscription = $this->createExpiredSubscription();
+        $subscription->cancel(immediately: false);
+
+        $this->assertEquals(SubscriptionStatus::ACTIVE, $subscription->fresh()->status);
+        $this->assertNotNull($subscription->fresh()->cancelled_at);
+
+        $this->mockSuccessfulPayment();
+
+        $job = new ProcessRenewals;
+        app()->call([$job, 'handle']);
+
+        // No payment row should have been created
+        $this->assertSame(0, Payment::where('subscription_id', $subscription->id)->count());
+
+        Event::assertNotDispatched(SubscriptionRenewed::class);
+        Event::assertNotDispatched(PaymentFailed::class);
+    }
+
+    public function test_renewal_uses_metadata_amount_for_variable_priced_subscriptions(): void
+    {
+        // Variable-priced subscriptions (per-stream, per-seat, per-MRR-tier)
+        // persist their billable amount in `metadata.amount` so the renewal
+        // job charges the right value rather than the plan's flat base price.
+        Event::fake([SubscriptionRenewed::class]);
+
+        $subscription = $this->createExpiredSubscription();
+        $subscription->update([
+            'metadata' => ['amount' => 1234500],
+        ]);
+
+        $this->mockSuccessfulPayment();
+
+        $job = new ProcessRenewals;
+        app()->call([$job, 'handle']);
+
+        $payment = Payment::where('subscription_id', $subscription->id)
+            ->where('status', PaymentStatus::COMPLETED)
+            ->first();
+
+        $this->assertNotNull($payment);
+        $this->assertSame(1234500, $payment->amount);
+        $this->assertNotSame($this->plan->base_price, $payment->amount);
+
+        Event::assertDispatched(SubscriptionRenewed::class, fn ($event) => $event->paymentAmount === 1234500);
+    }
+
     public function test_trial_conversion_success(): void
     {
         Event::fake([SubscriptionRenewed::class]);

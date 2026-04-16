@@ -123,4 +123,32 @@ class SubscriptionTest extends BaseTestCase
         $this->assertEquals(100, $this->company->usageLimit('ocr_scanning'));
         $this->assertNull($this->company->usageLimit('nonexistent'));
     }
+
+    public function test_is_active_returns_false_when_period_has_expired(): void
+    {
+        // Regression: a subscription whose `current_period_end` has passed but
+        // whose status is still `ACTIVE` (because the renewal job hasn't run
+        // yet) used to incorrectly report `isActive() === true`. The customer's
+        // paid window is over and they should not have feature access.
+        $subscription = $this->company->subscribe('standard')->create();
+
+        $subscription->update([
+            'current_period_start' => now()->subDays(31),
+            'current_period_end' => now()->subDay(),
+        ]);
+
+        $subscription->refresh();
+
+        $this->assertEquals(SubscriptionStatus::ACTIVE, $subscription->status);
+        $this->assertTrue($subscription->expired());
+        $this->assertFalse($subscription->isActive());
+    }
+
+    public function test_is_active_returns_true_when_period_in_future(): void
+    {
+        $subscription = $this->company->subscribe('standard')->create();
+
+        $this->assertTrue($subscription->isActive());
+        $this->assertFalse($subscription->expired());
+    }
 }
