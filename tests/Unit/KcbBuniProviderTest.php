@@ -150,6 +150,7 @@ class KcbBuniProviderTest extends BaseTestCase
     public function test_verify_webhook_valid_hmac_signature(): void
     {
         $payload = json_encode(['transaction_id' => 'TXN-001', 'status' => 'completed']);
+        $this->assertIsString($payload);
         $signature = hash_hmac('sha256', $payload, 'test_api_secret');
 
         $request = Request::create('/webhook', 'POST', [], [], [], [
@@ -162,6 +163,7 @@ class KcbBuniProviderTest extends BaseTestCase
     public function test_verify_webhook_invalid_hmac_signature(): void
     {
         $payload = json_encode(['transaction_id' => 'TXN-001']);
+        $this->assertIsString($payload);
 
         $request = Request::create('/webhook', 'POST', [], [], [], [
             'HTTP_X_KCB_SIGNATURE' => 'invalid_signature',
@@ -345,8 +347,15 @@ class KcbBuniProviderTest extends BaseTestCase
             ];
         });
 
-        $this->assertEquals('0', $result['header']['statusCode']);
-        $this->assertEquals('Jane Doe', $result['responsePayload']['transactionInfo']['customerName']);
-        $this->assertEquals('1000.00', $result['responsePayload']['transactionInfo']['amount']);
+        $header = $result['header'] ?? null;
+        $this->assertIsArray($header);
+        $this->assertEquals('0', $header['statusCode'] ?? null);
+
+        $responsePayload = $result['responsePayload'] ?? null;
+        $this->assertIsArray($responsePayload);
+        $transactionInfo = $responsePayload['transactionInfo'] ?? null;
+        $this->assertIsArray($transactionInfo);
+        $this->assertEquals('Jane Doe', $transactionInfo['customerName'] ?? null);
+        $this->assertEquals('1000.00', $transactionInfo['amount'] ?? null);
     }
 }

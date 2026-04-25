@@ -38,7 +38,7 @@ class AdminBypassTest extends BaseTestCase
 
     public function test_has_feature_or_admin_returns_feature_check_when_no_bypass_configured(): void
     {
-        $this->app['config']->set('billing.admin_bypass_method', null);
+        $this->setConfig('billing.admin_bypass_method', null);
 
         $this->company->subscribe('starter')->create();
 
@@ -48,7 +48,7 @@ class AdminBypassTest extends BaseTestCase
 
     public function test_has_feature_or_admin_returns_true_for_admin_without_subscription(): void
     {
-        $this->app['config']->set('billing.admin_bypass_method', 'isAdmin');
+        $this->setConfig('billing.admin_bypass_method', 'isAdmin');
 
         $admin = new class extends Company
         {
@@ -68,7 +68,7 @@ class AdminBypassTest extends BaseTestCase
 
     public function test_has_feature_or_admin_respects_non_admin(): void
     {
-        $this->app['config']->set('billing.admin_bypass_method', 'isAdmin');
+        $this->setConfig('billing.admin_bypass_method', 'isAdmin');
 
         $nonAdmin = new class extends Company
         {
@@ -89,14 +89,14 @@ class AdminBypassTest extends BaseTestCase
 
     public function test_is_billing_admin_returns_false_when_not_configured(): void
     {
-        $this->app['config']->set('billing.admin_bypass_method', null);
+        $this->setConfig('billing.admin_bypass_method', null);
 
         $this->assertFalse($this->company->isBillingAdmin());
     }
 
     public function test_is_billing_admin_returns_false_when_method_missing(): void
     {
-        $this->app['config']->set('billing.admin_bypass_method', 'isAdmin');
+        $this->setConfig('billing.admin_bypass_method', 'isAdmin');
 
         // Company fixture doesn't have isAdmin()
         $this->assertFalse($this->company->isBillingAdmin());
@@ -104,7 +104,7 @@ class AdminBypassTest extends BaseTestCase
 
     public function test_is_billing_admin_returns_true_when_method_returns_true(): void
     {
-        $this->app['config']->set('billing.admin_bypass_method', 'isAdmin');
+        $this->setConfig('billing.admin_bypass_method', 'isAdmin');
 
         $admin = new class extends Company
         {
@@ -124,8 +124,8 @@ class AdminBypassTest extends BaseTestCase
 
     public function test_feature_resolver_bypasses_for_admin(): void
     {
-        $this->app['config']->set('billing.admin_bypass_method', 'isAdmin');
-        $this->app['config']->set('billing.features.cache_ttl', 0);
+        $this->setConfig('billing.admin_bypass_method', 'isAdmin');
+        $this->setConfig('billing.features.cache_ttl', 0);
 
         $admin = new class extends Company
         {
@@ -147,8 +147,8 @@ class AdminBypassTest extends BaseTestCase
 
     public function test_feature_resolver_does_not_bypass_for_non_admin(): void
     {
-        $this->app['config']->set('billing.admin_bypass_method', 'isAdmin');
-        $this->app['config']->set('billing.features.cache_ttl', 0);
+        $this->setConfig('billing.admin_bypass_method', 'isAdmin');
+        $this->setConfig('billing.features.cache_ttl', 0);
 
         $nonAdmin = new class extends Company
         {
@@ -171,7 +171,7 @@ class AdminBypassTest extends BaseTestCase
 
     public function test_has_feature_unchanged_for_subscribed_billable(): void
     {
-        $this->app['config']->set('billing.admin_bypass_method', 'isAdmin');
+        $this->setConfig('billing.admin_bypass_method', 'isAdmin');
 
         $this->company->subscribe('starter')->create();
 

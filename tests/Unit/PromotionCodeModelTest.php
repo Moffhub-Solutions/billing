@@ -37,7 +37,6 @@ class PromotionCodeModelTest extends BaseTestCase
             'is_active' => true,
         ]);
 
-        $this->assertNotNull($promo->coupon);
         $this->assertEquals($this->coupon->id, $promo->coupon->id);
     }
 

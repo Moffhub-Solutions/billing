@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing;
 
+use Illuminate\Config\Repository;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Manager;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
@@ -36,20 +37,20 @@ class PaymentManager extends Manager
      */
     public function createMpesaDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.mpesa'] ?? [];
+        $prefix = 'billing.providers.mpesa.';
 
         return new MpesaProvider(
-            consumerKey: $config['consumer_key'] ?? '',
-            consumerSecret: $config['consumer_secret'] ?? '',
-            shortcode: $config['shortcode'] ?? '',
-            passkey: $config['passkey'] ?? '',
-            environment: $config['environment'] ?? 'sandbox',
-            callbackUrl: $config['callback_url'] ?? '',
-            timeoutUrl: $config['timeout_url'] ?? '',
-            baseUrl: $config['base_url'] ?? null,
-            initiatorName: $config['initiator_name'] ?? null,
-            initiatorPassword: $config['initiator_password'] ?? null,
-            certificatePath: $config['certificate_path'] ?? null,
+            consumerKey: $this->configString($prefix.'consumer_key'),
+            consumerSecret: $this->configString($prefix.'consumer_secret'),
+            shortcode: $this->configString($prefix.'shortcode'),
+            passkey: $this->configString($prefix.'passkey'),
+            environment: $this->configString($prefix.'environment', 'sandbox'),
+            callbackUrl: $this->configString($prefix.'callback_url'),
+            timeoutUrl: $this->configString($prefix.'timeout_url'),
+            baseUrl: $this->configNullableString($prefix.'base_url'),
+            initiatorName: $this->configNullableString($prefix.'initiator_name'),
+            initiatorPassword: $this->configNullableString($prefix.'initiator_password'),
+            certificatePath: $this->configNullableString($prefix.'certificate_path'),
         );
     }
 
@@ -58,13 +59,13 @@ class PaymentManager extends Manager
      */
     public function createPaystackDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.paystack'] ?? [];
+        $prefix = 'billing.providers.paystack.';
 
         return new PaystackProvider(
-            secretKey: $config['secret_key'] ?? '',
-            publicKey: $config['public_key'] ?? '',
-            webhookSecret: $config['webhook_secret'] ?? '',
-            baseUrl: $config['base_url'] ?? 'https://api.paystack.co',
+            secretKey: $this->configString($prefix.'secret_key'),
+            publicKey: $this->configString($prefix.'public_key'),
+            webhookSecret: $this->configString($prefix.'webhook_secret'),
+            baseUrl: $this->configString($prefix.'base_url', 'https://api.paystack.co'),
         );
     }
 
@@ -73,14 +74,14 @@ class PaymentManager extends Manager
      */
     public function createFlutterwaveDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.flutterwave'] ?? [];
+        $prefix = 'billing.providers.flutterwave.';
 
         return new FlutterwaveProvider(
-            secretKey: $config['secret_key'] ?? '',
-            publicKey: $config['public_key'] ?? '',
-            encryptionKey: $config['encryption_key'] ?? '',
-            webhookSecret: $config['webhook_secret'] ?? '',
-            baseUrl: $config['base_url'] ?? 'https://api.flutterwave.com/v3',
+            secretKey: $this->configString($prefix.'secret_key'),
+            publicKey: $this->configString($prefix.'public_key'),
+            encryptionKey: $this->configString($prefix.'encryption_key'),
+            webhookSecret: $this->configString($prefix.'webhook_secret'),
+            baseUrl: $this->configString($prefix.'base_url', 'https://api.flutterwave.com/v3'),
         );
     }
 
@@ -89,15 +90,15 @@ class PaymentManager extends Manager
      */
     public function createPesapalDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.pesapal'] ?? [];
+        $prefix = 'billing.providers.pesapal.';
 
         return new PesapalProvider(
-            consumerKey: $config['consumer_key'] ?? '',
-            consumerSecret: $config['consumer_secret'] ?? '',
-            environment: $config['environment'] ?? 'sandbox',
-            callbackUrl: $config['callback_url'] ?? '',
-            baseUrl: $config['base_url'] ?? null,
-            ipnId: $config['ipn_id'] ?? null,
+            consumerKey: $this->configString($prefix.'consumer_key'),
+            consumerSecret: $this->configString($prefix.'consumer_secret'),
+            environment: $this->configString($prefix.'environment', 'sandbox'),
+            callbackUrl: $this->configString($prefix.'callback_url'),
+            baseUrl: $this->configNullableString($prefix.'base_url'),
+            ipnId: $this->configNullableString($prefix.'ipn_id'),
         );
     }
 
@@ -106,16 +107,16 @@ class PaymentManager extends Manager
      */
     public function createAirtelDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.airtel'] ?? [];
+        $prefix = 'billing.providers.airtel.';
 
         return new AirtelMoneyProvider(
-            clientId: $config['client_id'] ?? '',
-            clientSecret: $config['client_secret'] ?? '',
-            environment: $config['environment'] ?? 'sandbox',
-            callbackUrl: $config['callback_url'] ?? '',
-            baseUrl: $config['base_url'] ?? null,
-            country: $config['country'] ?? 'KE',
-            currency: $config['currency'] ?? 'KES',
+            clientId: $this->configString($prefix.'client_id'),
+            clientSecret: $this->configString($prefix.'client_secret'),
+            environment: $this->configString($prefix.'environment', 'sandbox'),
+            callbackUrl: $this->configString($prefix.'callback_url'),
+            baseUrl: $this->configNullableString($prefix.'base_url'),
+            country: $this->configString($prefix.'country', 'KE'),
+            currency: $this->configString($prefix.'currency', 'KES'),
         );
     }
 
@@ -124,15 +125,15 @@ class PaymentManager extends Manager
      */
     public function createKcbDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.kcb'] ?? [];
+        $prefix = 'billing.providers.kcb.';
 
         return new KcbBuniProvider(
-            apiKey: $config['api_key'] ?? '',
-            apiSecret: $config['api_secret'] ?? '',
-            environment: $config['environment'] ?? 'sandbox',
-            callbackUrl: $config['callback_url'] ?? '',
-            baseUrl: $config['base_url'] ?? null,
-            merchantCode: $config['merchant_code'] ?? '',
+            apiKey: $this->configString($prefix.'api_key'),
+            apiSecret: $this->configString($prefix.'api_secret'),
+            environment: $this->configString($prefix.'environment', 'sandbox'),
+            callbackUrl: $this->configString($prefix.'callback_url'),
+            baseUrl: $this->configNullableString($prefix.'base_url'),
+            merchantCode: $this->configString($prefix.'merchant_code'),
         );
     }
 
@@ -141,16 +142,16 @@ class PaymentManager extends Manager
      */
     public function createJengaDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.jenga'] ?? [];
+        $prefix = 'billing.providers.jenga.';
 
         return new JengaProvider(
-            apiKey: $config['api_key'] ?? '',
-            merchantCode: $config['merchant_code'] ?? '',
-            consumerSecret: $config['consumer_secret'] ?? '',
-            privateKeyPath: $config['private_key_path'] ?? null,
-            environment: $config['environment'] ?? 'sandbox',
-            callbackUrl: $config['callback_url'] ?? '',
-            baseUrl: $config['base_url'] ?? null,
+            apiKey: $this->configString($prefix.'api_key'),
+            merchantCode: $this->configString($prefix.'merchant_code'),
+            consumerSecret: $this->configString($prefix.'consumer_secret'),
+            privateKeyPath: $this->configNullableString($prefix.'private_key_path'),
+            environment: $this->configString($prefix.'environment', 'sandbox'),
+            callbackUrl: $this->configString($prefix.'callback_url'),
+            baseUrl: $this->configNullableString($prefix.'base_url'),
         );
     }
 
@@ -159,15 +160,15 @@ class PaymentManager extends Manager
      */
     public function createCoopbankDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.coopbank'] ?? [];
+        $prefix = 'billing.providers.coopbank.';
 
         return new CoopBankProvider(
-            consumerKey: $config['consumer_key'] ?? '',
-            consumerSecret: $config['consumer_secret'] ?? '',
-            accountNumber: $config['account_number'] ?? '',
-            environment: $config['environment'] ?? 'sandbox',
-            callbackUrl: $config['callback_url'] ?? '',
-            baseUrl: $config['base_url'] ?? null,
+            consumerKey: $this->configString($prefix.'consumer_key'),
+            consumerSecret: $this->configString($prefix.'consumer_secret'),
+            accountNumber: $this->configString($prefix.'account_number'),
+            environment: $this->configString($prefix.'environment', 'sandbox'),
+            callbackUrl: $this->configString($prefix.'callback_url'),
+            baseUrl: $this->configNullableString($prefix.'base_url'),
         );
     }
 
@@ -176,15 +177,15 @@ class PaymentManager extends Manager
      */
     public function createStanbicDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.stanbic'] ?? [];
+        $prefix = 'billing.providers.stanbic.';
 
         return new StanbicProvider(
-            apiKey: $config['api_key'] ?? '',
-            apiSecret: $config['api_secret'] ?? '',
-            environment: $config['environment'] ?? 'sandbox',
-            callbackUrl: $config['callback_url'] ?? '',
-            baseUrl: $config['base_url'] ?? null,
-            merchantCode: $config['merchant_code'] ?? '',
+            apiKey: $this->configString($prefix.'api_key'),
+            apiSecret: $this->configString($prefix.'api_secret'),
+            environment: $this->configString($prefix.'environment', 'sandbox'),
+            callbackUrl: $this->configString($prefix.'callback_url'),
+            baseUrl: $this->configNullableString($prefix.'base_url'),
+            merchantCode: $this->configString($prefix.'merchant_code'),
         );
     }
 
@@ -193,14 +194,14 @@ class PaymentManager extends Manager
      */
     public function createNcbaDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.ncba'] ?? [];
+        $prefix = 'billing.providers.ncba.';
 
         return new NcbaProvider(
-            apiKey: $config['api_key'] ?? '',
-            apiSecret: $config['api_secret'] ?? '',
-            environment: $config['environment'] ?? 'sandbox',
-            callbackUrl: $config['callback_url'] ?? '',
-            baseUrl: $config['base_url'] ?? null,
+            apiKey: $this->configString($prefix.'api_key'),
+            apiSecret: $this->configString($prefix.'api_secret'),
+            environment: $this->configString($prefix.'environment', 'sandbox'),
+            callbackUrl: $this->configString($prefix.'callback_url'),
+            baseUrl: $this->configNullableString($prefix.'base_url'),
         );
     }
 
@@ -209,14 +210,14 @@ class PaymentManager extends Manager
      */
     public function createIntasendDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.intasend'] ?? [];
+        $prefix = 'billing.providers.intasend.';
 
         return new IntaSendProvider(
-            publishableKey: $config['publishable_key'] ?? '',
-            secretKey: $config['secret_key'] ?? '',
-            environment: $config['environment'] ?? 'sandbox',
-            callbackUrl: $config['callback_url'] ?? '',
-            baseUrl: $config['base_url'] ?? null,
+            publishableKey: $this->configString($prefix.'publishable_key'),
+            secretKey: $this->configString($prefix.'secret_key'),
+            environment: $this->configString($prefix.'environment', 'sandbox'),
+            callbackUrl: $this->configString($prefix.'callback_url'),
+            baseUrl: $this->configNullableString($prefix.'base_url'),
         );
     }
 
@@ -225,14 +226,14 @@ class PaymentManager extends Manager
      */
     public function createPayorchestraDriver(): PaymentProviderInterface
     {
-        $config = $this->app['config']['billing.providers.payorchestra'] ?? [];
+        $prefix = 'billing.providers.payorchestra.';
 
         return new PayOrchestraProvider(
-            apiKey: $config['api_key'] ?? '',
-            orgId: $config['org_id'] ?? '',
-            webhookSecret: $config['webhook_secret'] ?? '',
-            baseUrl: $config['base_url'] ?? 'https://backbone.payorchestra.com',
-            timeout: (int) ($config['timeout'] ?? 30),
+            apiKey: $this->configString($prefix.'api_key'),
+            orgId: $this->configString($prefix.'org_id'),
+            webhookSecret: $this->configString($prefix.'webhook_secret'),
+            baseUrl: $this->configString($prefix.'base_url', 'https://backbone.payorchestra.com'),
+            timeout: $this->configInt($prefix.'timeout', 30),
         );
     }
 
@@ -246,13 +247,13 @@ class PaymentManager extends Manager
 
     public function getDefaultDriver(): string
     {
-        return $this->app['config']['billing.default_provider'] ?? 'manual';
+        return $this->configString('billing.default_provider', 'manual');
     }
 
     /**
      * Get all available provider names.
      *
-     * @return array<string>
+     * @return array<int, string>
      */
     public function getAvailableProviders(): array
     {
@@ -264,23 +265,57 @@ class PaymentManager extends Manager
      */
     public function isProviderConfigured(string $provider): bool
     {
-        $config = $this->app['config']["billing.providers.{$provider}"] ?? [];
+        $prefix = "billing.providers.{$provider}.";
 
         return match ($provider) {
-            'payorchestra' => ! empty($config['api_key']) && ! empty($config['org_id']),
-            'mpesa' => ! empty($config['consumer_key']) && ! empty($config['consumer_secret']),
-            'paystack' => ! empty($config['secret_key']),
-            'flutterwave' => ! empty($config['secret_key']),
-            'pesapal' => ! empty($config['consumer_key']) && ! empty($config['consumer_secret']),
-            'airtel' => ! empty($config['client_id']) && ! empty($config['client_secret']),
-            'kcb' => ! empty($config['api_key']) && ! empty($config['api_secret']),
-            'jenga' => ! empty($config['api_key']) && ! empty($config['consumer_secret']),
-            'coopbank' => ! empty($config['consumer_key']) && ! empty($config['consumer_secret']),
-            'stanbic' => ! empty($config['api_key']) && ! empty($config['api_secret']),
-            'ncba' => ! empty($config['api_key']),
-            'intasend' => ! empty($config['publishable_key']) && ! empty($config['secret_key']),
+            'payorchestra' => $this->configString($prefix.'api_key') !== '' && $this->configString($prefix.'org_id') !== '',
+            'mpesa' => $this->configString($prefix.'consumer_key') !== '' && $this->configString($prefix.'consumer_secret') !== '',
+            'paystack' => $this->configString($prefix.'secret_key') !== '',
+            'flutterwave' => $this->configString($prefix.'secret_key') !== '',
+            'pesapal' => $this->configString($prefix.'consumer_key') !== '' && $this->configString($prefix.'consumer_secret') !== '',
+            'airtel' => $this->configString($prefix.'client_id') !== '' && $this->configString($prefix.'client_secret') !== '',
+            'kcb' => $this->configString($prefix.'api_key') !== '' && $this->configString($prefix.'api_secret') !== '',
+            'jenga' => $this->configString($prefix.'api_key') !== '' && $this->configString($prefix.'consumer_secret') !== '',
+            'coopbank' => $this->configString($prefix.'consumer_key') !== '' && $this->configString($prefix.'consumer_secret') !== '',
+            'stanbic' => $this->configString($prefix.'api_key') !== '' && $this->configString($prefix.'api_secret') !== '',
+            'ncba' => $this->configString($prefix.'api_key') !== '',
+            'intasend' => $this->configString($prefix.'publishable_key') !== '' && $this->configString($prefix.'secret_key') !== '',
             'manual' => true,
             default => false,
         };
+    }
+
+    private function config(): Repository
+    {
+        return $this->app->make('config');
+    }
+
+    private function configString(string $key, string $default = ''): string
+    {
+        $value = $this->config()->get($key, $default);
+
+        return is_string($value) ? $value : $default;
+    }
+
+    private function configNullableString(string $key): ?string
+    {
+        $value = $this->config()->get($key);
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function configInt(string $key, int $default = 0): int
+    {
+        $value = $this->config()->get($key, $default);
+
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return (int) $value;
+        }
+
+        return $default;
     }
 }

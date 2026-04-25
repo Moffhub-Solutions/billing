@@ -6,6 +6,7 @@ namespace Moffhub\Billing\Tests\Feature;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Testing\PendingCommand;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\Models\ReconciliationDrift;
@@ -40,8 +41,10 @@ class ReconcileWithPayOrchestraCommandTest extends BaseTestCase
             ]),
         ]);
 
-        $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24])
-            ->assertSuccessful();
+        $result = $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24]);
+        $this->assertInstanceOf(PendingCommand::class, $result);
+        $result->assertSuccessful();
+        $result->run();
 
         $this->assertSame(0, ReconciliationDrift::count());
     }
@@ -58,12 +61,15 @@ class ReconcileWithPayOrchestraCommandTest extends BaseTestCase
         ]);
 
         // Drift detected → command exits with FAILURE so cron can alert.
-        $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24])
-            ->assertExitCode(1);
+        $result = $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24]);
+        $this->assertInstanceOf(PendingCommand::class, $result);
+        $result->assertExitCode(1);
+        $result->run();
 
         $this->assertSame(1, ReconciliationDrift::count());
 
         $drift = ReconciliationDrift::first();
+        $this->assertNotNull($drift);
         $this->assertSame($payment->id, $drift->payment_id);
         $this->assertSame('pending', $drift->billing_status);
         $this->assertSame('completed', $drift->provider_status);
@@ -81,8 +87,10 @@ class ReconcileWithPayOrchestraCommandTest extends BaseTestCase
             ]),
         ]);
 
-        $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24, '--dry-run' => true])
-            ->assertExitCode(1);
+        $result = $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24, '--dry-run' => true]);
+        $this->assertInstanceOf(PendingCommand::class, $result);
+        $result->assertExitCode(1);
+        $result->run();
 
         $this->assertSame(0, ReconciliationDrift::count());
     }
@@ -99,8 +107,10 @@ class ReconcileWithPayOrchestraCommandTest extends BaseTestCase
             ]),
         ]);
 
-        $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24])
-            ->assertSuccessful();
+        $result = $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24]);
+        $this->assertInstanceOf(PendingCommand::class, $result);
+        $result->assertSuccessful();
+        $result->run();
 
         $this->assertSame(0, ReconciliationDrift::count());
     }
@@ -113,8 +123,10 @@ class ReconcileWithPayOrchestraCommandTest extends BaseTestCase
         $payment->saveQuietly();
 
         // No HTTP fake needed — the command shouldn't even ask backbone.
-        $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24])
-            ->assertSuccessful();
+        $result = $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24]);
+        $this->assertInstanceOf(PendingCommand::class, $result);
+        $result->assertSuccessful();
+        $result->run();
 
         $this->assertSame(0, ReconciliationDrift::count());
     }
@@ -127,8 +139,10 @@ class ReconcileWithPayOrchestraCommandTest extends BaseTestCase
         $payment->save();
 
         // No HTTP fake needed — non-payorchestra payments are skipped.
-        $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24])
-            ->assertSuccessful();
+        $result = $this->artisan('billing:reconcile-payorchestra', ['--hours' => 24]);
+        $this->assertInstanceOf(PendingCommand::class, $result);
+        $result->assertSuccessful();
+        $result->run();
 
         $this->assertSame(0, ReconciliationDrift::count());
     }
@@ -146,6 +160,9 @@ class ReconcileWithPayOrchestraCommandTest extends BaseTestCase
 
         $company->payments()->save($payment);
 
-        return $payment->fresh();
+        $fresh = $payment->fresh();
+        $this->assertNotNull($fresh);
+
+        return $fresh;
     }
 }

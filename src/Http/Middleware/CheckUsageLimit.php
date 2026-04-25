@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Http\Middleware;
 
 use Closure;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Moffhub\Billing\Contracts\BillableInterface;
 use Moffhub\Billing\Exceptions\UsageLimitExceededException;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -26,7 +28,7 @@ class CheckUsageLimit
         }
 
         // Admin bypass — skip usage limit check
-        if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin()) {
+        if ($billable->isBillingAdmin()) {
             return $next($request);
         }
 
@@ -48,22 +50,32 @@ class CheckUsageLimit
         return $next($request);
     }
 
-    protected function resolveBillable(Request $request): mixed
+    /**
+     * @return (Model&BillableInterface)|null
+     */
+    protected function resolveBillable(Request $request): (Model&BillableInterface)|null
     {
         $user = $request->user();
 
-        if ($user === null) {
+        if (! is_object($user)) {
             return null;
         }
 
-        if (method_exists($user, 'remainingQuota')) {
+        if ($user instanceof BillableInterface) {
             return $user;
         }
 
-        $billableRelation = config('billing.billable_relation', 'company');
+        $relationConfig = config('billing.billable_relation', 'company');
+        $relation = is_string($relationConfig) ? $relationConfig : 'company';
 
-        if (method_exists($user, $billableRelation)) {
-            return $user->{$billableRelation};
+        if (! method_exists($user, $relation)) {
+            return null;
+        }
+
+        $resolved = $user->{$relation};
+
+        if ($resolved instanceof Model && $resolved instanceof BillableInterface) {
+            return $resolved;
         }
 
         return null;

@@ -6,9 +6,16 @@ namespace Moffhub\Billing\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Moffhub\Billing\Models\PaymentToken;
 
+/**
+ * @mixin PaymentToken
+ */
 class PaymentTokenResource extends JsonResource
 {
+    /**
+     * @return array<string, mixed>
+     */
     #[\Override]
     public function toArray(Request $request): array
     {
@@ -29,7 +36,7 @@ class PaymentTokenResource extends JsonResource
             'is_usable' => $this->isUsable(),
             'expires_at' => $this->expires_at?->toIso8601ZuluString(),
             'last_used_at' => $this->last_used_at?->toIso8601ZuluString(),
-            'created_at' => $this->created_at?->toIso8601ZuluString(),
+            'created_at' => $this->created_at->toIso8601ZuluString(),
         ];
     }
 }

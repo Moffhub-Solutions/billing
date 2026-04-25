@@ -171,7 +171,9 @@ class MpesaProviderTest extends BaseTestCase
 
         $this->assertFalse($result['success']);
         $this->assertEquals('failed', $result['status']);
-        $this->assertStringContainsString('Phone number', $result['metadata']['error']);
+        $error = $result['metadata']['error'] ?? null;
+        $this->assertIsString($error);
+        $this->assertStringContainsString('Phone number', $error);
     }
 
     public function test_charge_converts_cents_to_whole_kes(): void
@@ -274,7 +276,9 @@ class MpesaProviderTest extends BaseTestCase
         $result = $this->provider->refund('TRANS123', 10000, []);
 
         $this->assertFalse($result['success']);
-        $this->assertStringContainsString('Phone number', $result['metadata']['error']);
+        $error = $result['metadata']['error'] ?? null;
+        $this->assertIsString($error);
+        $this->assertStringContainsString('Phone number', $error);
     }
 
     public function test_b2c_fails_without_initiator(): void
@@ -283,7 +287,9 @@ class MpesaProviderTest extends BaseTestCase
         $result = $this->provider->b2c('254712345678', 100);
 
         $this->assertFalse($result['success']);
-        $this->assertStringContainsString('initiator', $result['metadata']['error']);
+        $error = $result['metadata']['error'] ?? null;
+        $this->assertIsString($error);
+        $this->assertStringContainsString('initiator', $error);
     }
 
     // ─── Phone Formatting ──────────────────────────────────────────────

@@ -25,7 +25,9 @@ class PaymentManagerTest extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->manager = $this->app->make(PaymentManager::class);
+        $manager = $this->app()->make(PaymentManager::class);
+        $this->assertInstanceOf(PaymentManager::class, $manager);
+        $this->manager = $manager;
     }
 
     public function test_create_manual_driver(): void
@@ -44,7 +46,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_mpesa_driver_creates_provider(): void
     {
-        $this->app['config']->set('billing.providers.mpesa', [
+        $this->setConfig('billing.providers.mpesa', [
             'consumer_key' => 'test_key',
             'consumer_secret' => 'test_secret',
             'shortcode' => '174379',
@@ -59,7 +61,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_paystack_driver_creates_provider(): void
     {
-        $this->app['config']->set('billing.providers.paystack.secret_key', 'sk_test');
+        $this->setConfig('billing.providers.paystack.secret_key', 'sk_test');
 
         $driver = $this->manager->driver('paystack');
 
@@ -100,7 +102,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_is_provider_configured_mpesa_present(): void
     {
-        $this->app['config']->set('billing.providers.mpesa', [
+        $this->setConfig('billing.providers.mpesa', [
             'consumer_key' => 'test_key',
             'consumer_secret' => 'test_secret',
         ]);
@@ -112,7 +114,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_airtel_driver_creates_provider(): void
     {
-        $this->app['config']->set('billing.providers.airtel', [
+        $this->setConfig('billing.providers.airtel', [
             'client_id' => 'test_id',
             'client_secret' => 'test_secret',
         ]);
@@ -125,7 +127,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_kcb_driver_creates_provider(): void
     {
-        $this->app['config']->set('billing.providers.kcb', [
+        $this->setConfig('billing.providers.kcb', [
             'api_key' => 'test_key',
             'api_secret' => 'test_secret',
         ]);
@@ -138,7 +140,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_jenga_driver_creates_provider(): void
     {
-        $this->app['config']->set('billing.providers.jenga', [
+        $this->setConfig('billing.providers.jenga', [
             'api_key' => 'test_key',
             'consumer_secret' => 'test_secret',
             'merchant_code' => 'MERCH001',
@@ -152,7 +154,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_coopbank_driver_creates_provider(): void
     {
-        $this->app['config']->set('billing.providers.coopbank', [
+        $this->setConfig('billing.providers.coopbank', [
             'consumer_key' => 'test_key',
             'consumer_secret' => 'test_secret',
         ]);
@@ -165,7 +167,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_stanbic_driver_creates_provider(): void
     {
-        $this->app['config']->set('billing.providers.stanbic', [
+        $this->setConfig('billing.providers.stanbic', [
             'api_key' => 'test_key',
             'api_secret' => 'test_secret',
         ]);
@@ -178,7 +180,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_ncba_driver_creates_provider(): void
     {
-        $this->app['config']->set('billing.providers.ncba', [
+        $this->setConfig('billing.providers.ncba', [
             'api_key' => 'test_key',
         ]);
 
@@ -192,7 +194,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_is_provider_configured_airtel(): void
     {
-        $this->app['config']->set('billing.providers.airtel', [
+        $this->setConfig('billing.providers.airtel', [
             'client_id' => 'test',
             'client_secret' => 'test',
         ]);
@@ -207,7 +209,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_is_provider_configured_kcb(): void
     {
-        $this->app['config']->set('billing.providers.kcb', [
+        $this->setConfig('billing.providers.kcb', [
             'api_key' => 'test',
             'api_secret' => 'test',
         ]);
@@ -217,7 +219,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_is_provider_configured_ncba(): void
     {
-        $this->app['config']->set('billing.providers.ncba', [
+        $this->setConfig('billing.providers.ncba', [
             'api_key' => 'test',
         ]);
 
@@ -226,7 +228,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_intasend_driver_creates_provider(): void
     {
-        $this->app['config']->set('billing.providers.intasend', [
+        $this->setConfig('billing.providers.intasend', [
             'publishable_key' => 'ISPubKey_test_123',
             'secret_key' => 'ISSecretKey_test_123',
         ]);
@@ -239,7 +241,7 @@ class PaymentManagerTest extends BaseTestCase
 
     public function test_is_provider_configured_intasend(): void
     {
-        $this->app['config']->set('billing.providers.intasend', [
+        $this->setConfig('billing.providers.intasend', [
             'publishable_key' => 'test',
             'secret_key' => 'test',
         ]);

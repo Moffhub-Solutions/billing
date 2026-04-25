@@ -96,7 +96,9 @@ class AirtelMoneyProviderTest extends BaseTestCase
 
         $this->assertFalse($result['success']);
         $this->assertEquals('failed', $result['status']);
-        $this->assertStringContainsString('Phone number is required', $result['metadata']['error']);
+        $error = $result['metadata']['error'] ?? null;
+        $this->assertIsString($error);
+        $this->assertStringContainsString('Phone number is required', $error);
     }
 
     public function test_charge_success(): void

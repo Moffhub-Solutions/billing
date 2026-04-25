@@ -6,11 +6,10 @@ namespace Moffhub\Billing\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
 use Illuminate\Support\Str;
 use Moffhub\Billing\Http\Resources\PaymentTokenResource;
 
-class PaymentTokenController extends Controller
+class PaymentTokenController extends BillingController
 {
     /**
      * List saved payment methods for the billable.
@@ -127,26 +126,5 @@ class PaymentTokenController extends Controller
         }
 
         return response()->json(['message' => 'Payment method removed.']);
-    }
-
-    protected function resolveBillable(Request $request): mixed
-    {
-        $user = $request->user();
-
-        if ($user === null) {
-            return null;
-        }
-
-        if (method_exists($user, 'paymentTokens')) {
-            return $user;
-        }
-
-        $billableRelation = config('billing.billable_relation', 'company');
-
-        if (method_exists($user, $billableRelation)) {
-            return $user->{$billableRelation};
-        }
-
-        return null;
     }
 }

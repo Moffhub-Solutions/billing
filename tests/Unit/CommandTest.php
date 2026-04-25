@@ -24,7 +24,7 @@ class CommandTest extends BaseTestCase
             'features' => ['gatebook'],
         ]);
 
-        $this->artisan('billing:sync-plans')
+        $this->billingArtisan('billing:sync-plans')
             ->expectsOutputToContain('Syncing billing plans and features')
             ->expectsOutputToContain('Plans: 1')
             ->assertExitCode(0);
@@ -32,7 +32,7 @@ class CommandTest extends BaseTestCase
 
     public function test_sync_plans_seed_creates_plans_and_features(): void
     {
-        $this->artisan('billing:sync-plans', ['--seed' => true])
+        $this->billingArtisan('billing:sync-plans', ['--seed' => true])
             ->expectsOutputToContain('Seeding default features')
             ->expectsOutputToContain('Seeding default plans')
             ->assertExitCode(0);
@@ -49,7 +49,7 @@ class CommandTest extends BaseTestCase
 
     public function test_sync_plans_seed_dry_run(): void
     {
-        $this->artisan('billing:sync-plans', ['--seed' => true, '--dry-run' => true])
+        $this->billingArtisan('billing:sync-plans', ['--seed' => true, '--dry-run' => true])
             ->expectsOutputToContain('[DRY RUN]')
             ->assertExitCode(0);
 
@@ -60,11 +60,11 @@ class CommandTest extends BaseTestCase
     public function test_sync_plans_seed_idempotent(): void
     {
         // Run seed twice
-        $this->artisan('billing:sync-plans', ['--seed' => true])->assertExitCode(0);
+        $this->billingArtisan('billing:sync-plans', ['--seed' => true])->assertExitCode(0);
         $planCountFirst = Plan::count();
         $featureCountFirst = Feature::count();
 
-        $this->artisan('billing:sync-plans', ['--seed' => true])->assertExitCode(0);
+        $this->billingArtisan('billing:sync-plans', ['--seed' => true])->assertExitCode(0);
         $planCountSecond = Plan::count();
         $featureCountSecond = Feature::count();
 
@@ -74,7 +74,7 @@ class CommandTest extends BaseTestCase
 
     public function test_billing_health_runs(): void
     {
-        $this->artisan('billing:health')
+        $this->billingArtisan('billing:health')
             ->expectsOutputToContain('Billing Health Check')
             ->expectsOutputToContain('Plans:')
             ->expectsOutputToContain('Features:')
@@ -84,7 +84,7 @@ class CommandTest extends BaseTestCase
 
     public function test_billing_health_shows_providers(): void
     {
-        $this->artisan('billing:health')
+        $this->billingArtisan('billing:health')
             ->expectsOutputToContain('Payment Providers')
             ->expectsOutputToContain('manual')
             ->expectsOutputToContain('Configuration')

@@ -7,8 +7,22 @@ namespace Moffhub\Billing\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Moffhub\Billing\Database\Factories\SubscriptionAddonFactory;
 
+/**
+ * @property int $id
+ * @property int $subscription_id
+ * @property int $feature_id
+ * @property string $status
+ * @property int|null $price_override
+ * @property Carbon|null $enabled_at
+ * @property Carbon|null $disabled_at
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
+ * @property-read Subscription $subscription
+ * @property-read Feature $feature
+ */
 class SubscriptionAddon extends Model
 {
     /** @use HasFactory<SubscriptionAddonFactory> */
@@ -35,14 +49,22 @@ class SubscriptionAddon extends Model
     #[\Override]
     public function getTable(): string
     {
-        return config('billing.tables.subscription_addons', 'billing_subscription_addons');
+        $value = config('billing.tables.subscription_addons', 'billing_subscription_addons');
+
+        return is_string($value) ? $value : 'billing_subscription_addons';
     }
 
+    /**
+     * @return BelongsTo<Subscription, $this>
+     */
     public function subscription(): BelongsTo
     {
         return $this->belongsTo(Subscription::class);
     }
 
+    /**
+     * @return BelongsTo<Feature, $this>
+     */
     public function feature(): BelongsTo
     {
         return $this->belongsTo(Feature::class);

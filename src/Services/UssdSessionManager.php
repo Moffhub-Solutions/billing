@@ -15,7 +15,9 @@ class UssdSessionManager
      */
     public function get(string $sessionId): array
     {
-        return Cache::get($this->key($sessionId), []);
+        $value = Cache::get($this->key($sessionId), []);
+
+        return is_array($value) ? $value : [];
     }
 
     /**
@@ -25,7 +27,8 @@ class UssdSessionManager
      */
     public function put(string $sessionId, array $data): void
     {
-        $ttl = (int) config('billing.ussd.session_ttl', 300);
+        $ttlValue = config('billing.ussd.session_ttl', 300);
+        $ttl = is_numeric($ttlValue) ? (int) $ttlValue : 300;
 
         Cache::put($this->key($sessionId), $data, $ttl);
     }

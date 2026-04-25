@@ -10,11 +10,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create(config('billing.tables.subscriptions', 'billing_subscriptions'), function (Blueprint $table): void {
+        Schema::create(billing_table('subscriptions', 'billing_subscriptions'), function (Blueprint $table): void {
             $table->id();
             $table->ulid()->unique();
             $table->morphs('billable');
-            $table->foreignId('plan_id')->constrained(config('billing.tables.plans', 'billing_plans'));
+            $table->foreignId('plan_id')->constrained(billing_table('plans', 'billing_plans'));
             $table->string('status')->default('active')->index();
             $table->timestamp('trial_ends_at')->nullable();
             $table->timestamp('current_period_start')->nullable();
@@ -33,6 +33,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists(config('billing.tables.subscriptions', 'billing_subscriptions'));
+        Schema::dropIfExists(billing_table('subscriptions', 'billing_subscriptions'));
     }
 };

@@ -38,7 +38,7 @@ class IntaSendProvider extends BasePaymentProvider
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
     {
-        $method = $options['method'] ?? 'checkout'; // checkout, stk_push
+        $method = $this->optionString($options, 'method', 'checkout'); // checkout, stk_push
 
         if ($method === 'stk_push') {
             return $this->stkPush($amount, $currency, $options);
@@ -50,7 +50,7 @@ class IntaSendProvider extends BasePaymentProvider
     #[\Override]
     public function refund(string $providerPaymentId, ?int $amount = null, array $options = []): array
     {
-        $phone = $options['phone'] ?? null;
+        $phone = $this->optionNullableString($options, 'phone');
 
         if ($phone === null) {
             return [
@@ -65,11 +65,12 @@ class IntaSendProvider extends BasePaymentProvider
             'phone_number' => $this->formatPhone($phone),
             'amount' => $amount !== null ? (int) ceil($amount / 100) : 0,
             'currency' => 'KES',
-            'narrative' => $options['narrative'] ?? "Refund for {$providerPaymentId}",
+            'narrative' => $this->optionString($options, 'narrative', "Refund for {$providerPaymentId}"),
         ];
 
-        if (isset($options['name'])) {
-            $payload['name'] = $options['name'];
+        $name = $this->optionNullableString($options, 'name');
+        if ($name !== null) {
+            $payload['name'] = $name;
         }
 
         $this->logRequest('POST', $this->baseUrl.'/api/v1/send-money/mpesa/', $payload);
@@ -77,13 +78,14 @@ class IntaSendProvider extends BasePaymentProvider
         $response = Http::withToken($this->secretKey)
             ->post($this->baseUrl.'/api/v1/send-money/mpesa/', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
-        $success = ($data['status'] ?? '') === 'Preview' || ($data['tracking_id'] ?? null) !== null;
+        $trackingId = $data['tracking_id'] ?? null;
+        $success = ($data['status'] ?? '') === 'Preview' || $trackingId !== null;
 
         return [
             'success' => $success,
-            'provider_refund_id' => $data['tracking_id'] ?? null,
+            'provider_refund_id' => is_string($trackingId) ? $trackingId : null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -97,18 +99,19 @@ class IntaSendProvider extends BasePaymentProvider
                 'invoice_id' => $providerPaymentId,
             ]);
 
-        $data = $response->json() ?? [];
-        $statusCode = $data['invoice']['state'] ?? $data['status_code'] ?? null;
+        $data = $this->asArray($response->json());
+        $invoice = $data['invoice'] ?? null;
+        $statusCode = (is_array($invoice) ? ($invoice['state'] ?? null) : null) ?? $data['status_code'] ?? null;
 
-        return $this->mapStatus($statusCode);
+        return $this->mapStatus(is_string($statusCode) ? $statusCode : null);
     }
 
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        $signature = $request->header('X-IntaSend-Signature', '');
+        $signature = (string) $request->header('X-IntaSend-Signature', '');
 
-        if (! empty($signature) && ! empty($this->secretKey)) {
+        if ($signature !== '' && $this->secretKey !== '') {
             $payload = $request->getContent();
             $expected = hash_hmac('sha256', $payload, $this->secretKey);
 
@@ -123,20 +126,26 @@ class IntaSendProvider extends BasePaymentProvider
     public function parseWebhook(Request $request): array
     {
         $data = $request->all();
-        $invoice = $data['invoice'] ?? $data;
-        $statusCode = $invoice['state'] ?? $invoice['status_code'] ?? $data['status_code'] ?? null;
-        $status = $this->mapStatus($statusCode);
+        $invoiceRaw = $data['invoice'] ?? $data;
+        $invoice = is_array($invoiceRaw) ? $invoiceRaw : [];
 
-        $amount = isset($invoice['net_amount'])
-            ? (int) ((float) $invoice['net_amount'] * 100)
-            : (isset($invoice['amount']) ? (int) ((float) $invoice['amount'] * 100) : null);
+        $statusCode = $invoice['state'] ?? $invoice['status_code'] ?? $data['status_code'] ?? null;
+        $status = $this->mapStatus(is_string($statusCode) ? $statusCode : null);
+
+        $netAmount = $invoice['net_amount'] ?? null;
+        $invoiceAmount = $invoice['amount'] ?? null;
+        $amount = is_numeric($netAmount)
+            ? (int) ((float) $netAmount * 100)
+            : (is_numeric($invoiceAmount) ? (int) ((float) $invoiceAmount * 100) : null);
+
+        $providerPaymentId = $invoice['invoice_id'] ?? $data['invoice_id'] ?? $data['tracking_id'] ?? null;
 
         return [
             'event' => $status === 'completed' ? 'payment.completed' : ($status === 'failed' ? 'payment.failed' : 'payment.pending'),
-            'provider_payment_id' => $invoice['invoice_id'] ?? $data['invoice_id'] ?? $data['tracking_id'] ?? null,
+            'provider_payment_id' => is_string($providerPaymentId) ? $providerPaymentId : null,
             'status' => $status,
             'amount' => $amount,
-            'currency' => $invoice['currency'] ?? $data['currency'] ?? 'KES',
+            'currency' => $this->stringOr($invoice['currency'] ?? $data['currency'] ?? null, 'KES'),
             'metadata' => [
                 'api_ref' => $invoice['api_ref'] ?? $data['api_ref'] ?? null,
                 'mpesa_reference' => $invoice['mpesa_reference'] ?? $data['mpesa_reference'] ?? null,
@@ -151,7 +160,7 @@ class IntaSendProvider extends BasePaymentProvider
     #[\Override]
     public function isConfigured(): bool
     {
-        return ! empty($this->publishableKey) && ! empty($this->secretKey);
+        return $this->publishableKey !== '' && $this->secretKey !== '';
     }
 
     #[\Override]
@@ -162,25 +171,32 @@ class IntaSendProvider extends BasePaymentProvider
 
     // ─── Checkout (hosted payment page) ────────────────────────────────
 
+    /**
+     * @param  array<string, mixed>  $options
+     * @return array{success: bool, provider_payment_id: string|null, provider_reference: string|null, status: string, metadata: array<string, mixed>}
+     */
     protected function checkout(int $amount, string $currency, array $options): array
     {
+        $apiRef = $this->optionString($options, 'reference', 'PAY-'.uniqid());
+
         $payload = [
             'amount' => (int) ceil($amount / 100),
-            'currency' => $currency ?: 'KES',
-            'api_ref' => $options['reference'] ?? 'PAY-'.uniqid(),
-            'redirect_url' => $options['redirect_url'] ?? $this->callbackUrl,
-            'webhook_url' => $options['webhook_url'] ?? $this->callbackUrl,
+            'currency' => $currency !== '' ? $currency : 'KES',
+            'api_ref' => $apiRef,
+            'redirect_url' => $this->optionString($options, 'redirect_url', $this->callbackUrl),
+            'webhook_url' => $this->optionString($options, 'webhook_url', $this->callbackUrl),
         ];
 
         if (isset($options['email']) || isset($options['first_name'])) {
-            $payload['first_name'] = $options['first_name'] ?? '';
-            $payload['last_name'] = $options['last_name'] ?? '';
-            $payload['email'] = $options['email'] ?? '';
-            $payload['country'] = $options['country'] ?? 'KE';
+            $payload['first_name'] = $this->optionString($options, 'first_name');
+            $payload['last_name'] = $this->optionString($options, 'last_name');
+            $payload['email'] = $this->optionString($options, 'email');
+            $payload['country'] = $this->optionString($options, 'country', 'KE');
         }
 
-        if (isset($options['phone'])) {
-            $payload['phone_number'] = $this->formatPhone($options['phone']);
+        $phone = $this->optionNullableString($options, 'phone');
+        if ($phone !== null) {
+            $payload['phone_number'] = $this->formatPhone($phone);
         }
 
         $this->logRequest('POST', $this->baseUrl.'/api/v1/checkout/', $payload);
@@ -190,14 +206,17 @@ class IntaSendProvider extends BasePaymentProvider
             'X-IntaSend-Public-API-Key' => $this->publishableKey,
         ])->post($this->baseUrl.'/api/v1/checkout/', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         $success = isset($data['id']) || isset($data['url']);
 
+        $providerPaymentId = $data['id'] ?? $data['invoice_id'] ?? null;
+        $providerReference = $data['api_ref'] ?? $apiRef;
+
         return [
             'success' => $success,
-            'provider_payment_id' => $data['id'] ?? $data['invoice_id'] ?? null,
-            'provider_reference' => $data['api_ref'] ?? $payload['api_ref'],
+            'provider_payment_id' => is_string($providerPaymentId) ? $providerPaymentId : null,
+            'provider_reference' => is_string($providerReference) ? $providerReference : null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -205,9 +224,13 @@ class IntaSendProvider extends BasePaymentProvider
 
     // ─── M-Pesa STK Push ───────────────────────────────────────────────
 
+    /**
+     * @param  array<string, mixed>  $options
+     * @return array{success: bool, provider_payment_id: string|null, provider_reference: string|null, status: string, metadata: array<string, mixed>}
+     */
     protected function stkPush(int $amount, string $currency, array $options): array
     {
-        $phone = $options['phone'] ?? null;
+        $phone = $this->optionNullableString($options, 'phone');
 
         if ($phone === null) {
             return [
@@ -219,12 +242,14 @@ class IntaSendProvider extends BasePaymentProvider
             ];
         }
 
+        $apiRef = $this->optionString($options, 'reference', 'PAY-'.uniqid());
+
         $payload = [
             'phone_number' => $this->formatPhone($phone),
             'amount' => (int) ceil($amount / 100),
-            'currency' => $currency ?: 'KES',
-            'api_ref' => $options['reference'] ?? 'PAY-'.uniqid(),
-            'wallet_id' => $options['wallet_id'] ?? null,
+            'currency' => $currency !== '' ? $currency : 'KES',
+            'api_ref' => $apiRef,
+            'wallet_id' => $this->optionNullableString($options, 'wallet_id'),
         ];
 
         $this->logRequest('POST', $this->baseUrl.'/api/v1/payment/mpesa-stk-push/', $payload);
@@ -232,14 +257,19 @@ class IntaSendProvider extends BasePaymentProvider
         $response = Http::withToken($this->secretKey)
             ->post($this->baseUrl.'/api/v1/payment/mpesa-stk-push/', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
-        $success = isset($data['invoice']) && ($data['invoice']['state'] ?? '') !== 'FAILED';
+        $invoice = $data['invoice'] ?? null;
+        $invoiceArr = is_array($invoice) ? $invoice : [];
+        $success = $invoiceArr !== [] && ($invoiceArr['state'] ?? '') !== 'FAILED';
+
+        $providerPaymentId = $invoiceArr['invoice_id'] ?? null;
+        $providerReference = $invoiceArr['api_ref'] ?? $apiRef;
 
         return [
             'success' => $success,
-            'provider_payment_id' => $data['invoice']['invoice_id'] ?? null,
-            'provider_reference' => $data['invoice']['api_ref'] ?? $payload['api_ref'],
+            'provider_payment_id' => is_string($providerPaymentId) ? $providerPaymentId : null,
+            'provider_reference' => is_string($providerReference) ? $providerReference : null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -256,7 +286,8 @@ class IntaSendProvider extends BasePaymentProvider
 
     protected function formatPhone(string $phone): string
     {
-        $phone = preg_replace('/[^0-9]/', '', $phone) ?? $phone;
+        $cleaned = preg_replace('/[^0-9]/', '', $phone);
+        $phone = is_string($cleaned) ? $cleaned : $phone;
 
         if (str_starts_with($phone, '0')) {
             $phone = '254'.substr($phone, 1);
@@ -277,5 +308,10 @@ class IntaSendProvider extends BasePaymentProvider
             'TC108', 'CANCELLED', 'cancelled' => 'cancelled',
             default => 'pending',
         };
+    }
+
+    protected function stringOr(mixed $value, string $default): string
+    {
+        return is_string($value) ? $value : $default;
     }
 }

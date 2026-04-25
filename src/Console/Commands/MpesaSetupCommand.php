@@ -33,8 +33,13 @@ class MpesaSetupCommand extends Command
             return self::FAILURE;
         }
 
-        /** @var MpesaProvider $provider */
         $provider = $paymentManager->driver('mpesa');
+
+        if (! $provider instanceof MpesaProvider) {
+            $this->error('M-Pesa driver is not an MpesaProvider instance.');
+
+            return self::FAILURE;
+        }
 
         $this->checkCredentials($provider);
         $this->checkCallbackUrls();
@@ -60,19 +65,19 @@ class MpesaSetupCommand extends Command
         $configured = $provider->isConfigured();
         $this->line('  Consumer Key/Secret: '.($configured ? '<fg=green>set</>' : '<fg=red>missing</>'));
 
-        $shortcode = config('billing.providers.mpesa.shortcode');
-        $this->line('  Shortcode: '.($shortcode ? "<fg=green>{$shortcode}</>" : '<fg=red>missing</>'));
+        $shortcode = $this->configString('billing.providers.mpesa.shortcode');
+        $this->line('  Shortcode: '.($shortcode !== '' ? "<fg=green>{$shortcode}</>" : '<fg=red>missing</>'));
 
-        $passkey = config('billing.providers.mpesa.passkey');
-        $this->line('  Passkey: '.($passkey ? '<fg=green>set</>' : '<fg=red>missing</>'));
+        $passkey = $this->configString('billing.providers.mpesa.passkey');
+        $this->line('  Passkey: '.($passkey !== '' ? '<fg=green>set</>' : '<fg=red>missing</>'));
 
-        $environment = config('billing.providers.mpesa.environment', 'sandbox');
+        $environment = $this->configString('billing.providers.mpesa.environment', 'sandbox');
         $this->line("  Environment: <fg=cyan>{$environment}</>");
 
         // Test OAuth token
         try {
             $token = $provider->getAccessToken();
-            $this->line('  OAuth Token: '.($token ? '<fg=green>valid</>' : '<fg=red>failed</>'));
+            $this->line('  OAuth Token: '.($token !== '' ? '<fg=green>valid</>' : '<fg=red>failed</>'));
         } catch (\Throwable $e) {
             $this->line('  OAuth Token: <fg=red>failed</> ('.$e->getMessage().')');
         }
@@ -83,19 +88,19 @@ class MpesaSetupCommand extends Command
         $this->newLine();
         $this->info('Callback URLs:');
 
-        $callbackUrl = config('billing.providers.mpesa.callback_url');
-        $timeoutUrl = config('billing.providers.mpesa.timeout_url');
-        $webhookPrefix = config('billing.webhooks.prefix', 'billing/webhooks');
+        $callbackUrl = $this->configString('billing.providers.mpesa.callback_url');
+        $timeoutUrl = $this->configString('billing.providers.mpesa.timeout_url');
+        $webhookPrefix = $this->configString('billing.webhooks.prefix', 'billing/webhooks');
 
-        $this->line('  STK Callback: '.($callbackUrl ? "<fg=green>{$callbackUrl}</>" : '<fg=red>not set (MPESA_CALLBACK_URL)</>'));
-        $this->line('  Timeout URL: '.($timeoutUrl ? "<fg=green>{$timeoutUrl}</>" : '<fg=yellow>not set (MPESA_TIMEOUT_URL)</>'));
+        $this->line('  STK Callback: '.($callbackUrl !== '' ? "<fg=green>{$callbackUrl}</>" : '<fg=red>not set (MPESA_CALLBACK_URL)</>'));
+        $this->line('  Timeout URL: '.($timeoutUrl !== '' ? "<fg=green>{$timeoutUrl}</>" : '<fg=yellow>not set (MPESA_TIMEOUT_URL)</>'));
         $this->line("  Webhook Route: <fg=cyan>{$webhookPrefix}/mpesa</>");
 
         // C2B URLs check
         $this->newLine();
         $this->info('C2B (Customer to Business):');
 
-        $appUrl = config('app.url', 'http://localhost');
+        $appUrl = $this->configString('app.url', 'http://localhost');
         $confirmationUrl = "{$appUrl}/{$webhookPrefix}/mpesa";
         $validationUrl = "{$appUrl}/{$webhookPrefix}/mpesa";
 
@@ -110,21 +115,21 @@ class MpesaSetupCommand extends Command
         $this->newLine();
         $this->info('B2C (Business to Customer):');
 
-        $initiatorName = config('billing.providers.mpesa.initiator_name');
-        $initiatorPassword = config('billing.providers.mpesa.initiator_password');
-        $certPath = config('billing.providers.mpesa.certificate_path');
+        $initiatorName = $this->configString('billing.providers.mpesa.initiator_name');
+        $initiatorPassword = $this->configString('billing.providers.mpesa.initiator_password');
+        $certPath = $this->configString('billing.providers.mpesa.certificate_path');
 
-        $this->line('  Initiator Name: '.($initiatorName ? '<fg=green>set</>' : '<fg=yellow>not set (optional)</>'));
-        $this->line('  Initiator Password: '.($initiatorPassword ? '<fg=green>set</>' : '<fg=yellow>not set (optional)</>'));
+        $this->line('  Initiator Name: '.($initiatorName !== '' ? '<fg=green>set</>' : '<fg=yellow>not set (optional)</>'));
+        $this->line('  Initiator Password: '.($initiatorPassword !== '' ? '<fg=green>set</>' : '<fg=yellow>not set (optional)</>'));
 
-        if ($certPath) {
+        if ($certPath !== '') {
             $exists = file_exists($certPath);
             $this->line('  Certificate: '.($exists ? "<fg=green>{$certPath}</>" : "<fg=red>{$certPath} (file not found)</>"));
         } else {
             $this->line('  Certificate: <fg=yellow>not set — will use sandbox default</>');
         }
 
-        $b2cReady = $initiatorName && $initiatorPassword;
+        $b2cReady = $initiatorName !== '' && $initiatorPassword !== '';
         $this->line('  Status: '.($b2cReady ? '<fg=green>ready</>' : '<fg=yellow>not configured (refunds/disbursements disabled)</>'));
     }
 
@@ -133,11 +138,13 @@ class MpesaSetupCommand extends Command
         $this->newLine();
         $this->info('Registering C2B URLs with Safaricom...');
 
-        $appUrl = config('app.url', 'http://localhost');
-        $webhookPrefix = config('billing.webhooks.prefix', 'billing/webhooks');
+        $appUrl = $this->configString('app.url', 'http://localhost');
+        $webhookPrefix = $this->configString('billing.webhooks.prefix', 'billing/webhooks');
         $confirmationUrl = "{$appUrl}/{$webhookPrefix}/mpesa";
         $validationUrl = "{$appUrl}/{$webhookPrefix}/mpesa";
-        $responseType = $this->option('response-type');
+
+        $responseTypeRaw = $this->option('response-type');
+        $responseType = is_string($responseTypeRaw) ? $responseTypeRaw : 'Completed';
 
         $this->line("  Confirmation URL: {$confirmationUrl}");
         $this->line("  Validation URL: {$validationUrl}");
@@ -155,8 +162,9 @@ class MpesaSetupCommand extends Command
         try {
             $result = $provider->registerC2bUrls($confirmationUrl, $validationUrl, $responseType);
 
-            $responseCode = $result['ResponseCode'] ?? $result['ResponseDescription'] ?? 'unknown';
-            $responseDesc = $result['ResponseDescription'] ?? json_encode($result);
+            $responseCodeRaw = $result['ResponseCode'] ?? $result['ResponseDescription'] ?? 'unknown';
+            $responseDescRaw = $result['ResponseDescription'] ?? json_encode($result);
+            $responseDesc = is_string($responseDescRaw) ? $responseDescRaw : 'unknown';
 
             if (($result['ResponseCode'] ?? '') === '0') {
                 $this->newLine();
@@ -169,8 +177,10 @@ class MpesaSetupCommand extends Command
                 return self::SUCCESS;
             }
 
+            unset($responseCodeRaw);
+
             $this->error("Registration failed: {$responseDesc}");
-            $this->line('  Full response: '.json_encode($result, JSON_PRETTY_PRINT));
+            $this->line('  Full response: '.(string) json_encode($result, JSON_PRETTY_PRINT));
 
             return self::FAILURE;
         } catch (\Throwable $e) {
@@ -178,5 +188,12 @@ class MpesaSetupCommand extends Command
 
             return self::FAILURE;
         }
+    }
+
+    private function configString(string $key, string $default = ''): string
+    {
+        $value = config($key, $default);
+
+        return is_string($value) ? $value : $default;
     }
 }

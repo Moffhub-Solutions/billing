@@ -146,6 +146,7 @@ class FeatureGatingTest extends BaseTestCase
 
         // Add HR as an add-on
         $hrFeature = Feature::where('slug', 'hr_management')->first();
+        $this->assertNotNull($hrFeature);
         $subscription->addons()->create([
             'feature_id' => $hrFeature->id,
             'status' => 'active',
@@ -163,6 +164,7 @@ class FeatureGatingTest extends BaseTestCase
         $resolver = app(FeatureResolver::class);
 
         $hrFeature = Feature::where('slug', 'hr_management')->first();
+        $this->assertNotNull($hrFeature);
         $addon = $subscription->addons()->create([
             'feature_id' => $hrFeature->id,
             'status' => 'active',
@@ -185,6 +187,7 @@ class FeatureGatingTest extends BaseTestCase
         $resolver = app(FeatureResolver::class);
 
         $webhooksFeature = Feature::where('slug', 'webhooks')->first();
+        $this->assertNotNull($webhooksFeature);
         $subscription->addons()->create([
             'feature_id' => $webhooksFeature->id,
             'status' => 'active',
@@ -205,7 +208,9 @@ class FeatureGatingTest extends BaseTestCase
         $resolver = app(FeatureResolver::class);
 
         $hrFeature = Feature::where('slug', 'hr_management')->first();
+        $this->assertNotNull($hrFeature);
         $webhooksFeature = Feature::where('slug', 'webhooks')->first();
+        $this->assertNotNull($webhooksFeature);
 
         $subscription->addons()->create(['feature_id' => $hrFeature->id, 'status' => 'active', 'enabled_at' => now()]);
         $subscription->addons()->create(['feature_id' => $webhooksFeature->id, 'status' => 'active', 'enabled_at' => now()]);

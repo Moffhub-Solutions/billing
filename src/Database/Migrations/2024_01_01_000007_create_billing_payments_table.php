@@ -10,12 +10,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create(config('billing.tables.payments', 'billing_payments'), function (Blueprint $table): void {
+        Schema::create(billing_table('payments', 'billing_payments'), function (Blueprint $table): void {
             $table->id();
             $table->ulid()->unique();
             $table->morphs('billable');
-            $table->foreignId('subscription_id')->nullable()->constrained(config('billing.tables.subscriptions', 'billing_subscriptions'))->nullOnDelete();
-            $table->foreignId('invoice_id')->nullable()->constrained(config('billing.tables.invoices', 'billing_invoices'))->nullOnDelete();
+            $table->foreignId('subscription_id')->nullable()->constrained(billing_table('subscriptions', 'billing_subscriptions'))->nullOnDelete();
+            $table->foreignId('invoice_id')->nullable()->constrained(billing_table('invoices', 'billing_invoices'))->nullOnDelete();
             $table->integer('amount');
             $table->string('currency', 3)->default('KES');
             $table->string('status')->default('pending')->index();
@@ -35,6 +35,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists(config('billing.tables.payments', 'billing_payments'));
+        Schema::dropIfExists(billing_table('payments', 'billing_payments'));
     }
 };

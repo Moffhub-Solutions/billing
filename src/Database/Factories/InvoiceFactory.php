@@ -16,15 +16,22 @@ class InvoiceFactory extends Factory
 {
     protected $model = Invoice::class;
 
+    /**
+     * @return array<string, mixed>
+     */
     public function definition(): array
     {
-        $subtotal = fake()->randomElement([100000, 250000, 500000, 750000]);
+        $subtotalValue = fake()->randomElement([100000, 250000, 500000, 750000]);
+        $subtotal = is_int($subtotalValue) ? $subtotalValue : 100000;
         $taxRate = 16.0;
         $taxAmount = (int) round($subtotal * ($taxRate / 100));
 
+        $billableModelRaw = config('billing.billable_model', 'App\\Models\\Company');
+        $billableModel = is_string($billableModelRaw) ? $billableModelRaw : 'App\\Models\\Company';
+
         return [
             'ulid' => Str::ulid()->toBase32(),
-            'billable_type' => config('billing.billable_model', 'App\\Models\\Company'),
+            'billable_type' => $billableModel,
             'billable_id' => 1,
             'number' => 'INV-'.str_pad((string) fake()->unique()->numberBetween(1, 99999), 5, '0', STR_PAD_LEFT),
             'status' => InvoiceStatus::DRAFT,

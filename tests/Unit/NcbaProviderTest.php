@@ -134,6 +134,7 @@ class NcbaProviderTest extends BaseTestCase
     public function test_verify_webhook_with_signature(): void
     {
         $payload = json_encode(['transaction_id' => 'TXN-001']);
+        $this->assertIsString($payload);
         $signature = hash_hmac('sha256', $payload, 'test_api_secret');
 
         $request = Request::create('/webhook', 'POST', [], [], [], [
@@ -146,6 +147,7 @@ class NcbaProviderTest extends BaseTestCase
     public function test_verify_webhook_invalid_signature(): void
     {
         $payload = json_encode(['transaction_id' => 'TXN-001']);
+        $this->assertIsString($payload);
 
         $request = Request::create('/webhook', 'POST', [], [], [], [
             'HTTP_X_NCBA_SIGNATURE' => 'invalid',

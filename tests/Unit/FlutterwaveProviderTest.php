@@ -75,8 +75,12 @@ class FlutterwaveProviderTest extends BaseTestCase
 
         $this->provider->charge(750000, 'KES', ['email' => 'test@test.com']);
 
-        Http::assertSent(function ($request) {
+        Http::assertSent(function ($request): bool {
             $body = json_decode($request->body(), true);
+
+            if (! is_array($body)) {
+                return false;
+            }
 
             return ($body['amount'] ?? null) == 7500;
         });

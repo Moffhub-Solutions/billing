@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create(config('billing.tables.usage_events', 'billing_usage_events'), function (Blueprint $table): void {
+        Schema::create(billing_table('usage_events', 'billing_usage_events'), function (Blueprint $table): void {
             $table->id();
             $table->ulid()->unique();
             $table->morphs('billable');
@@ -27,6 +27,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists(config('billing.tables.usage_events', 'billing_usage_events'));
+        Schema::dropIfExists(billing_table('usage_events', 'billing_usage_events'));
     }
 };

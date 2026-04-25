@@ -20,7 +20,7 @@ class FlutterwaveProvider extends BasePaymentProvider
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
     {
-        $email = $options['email'] ?? null;
+        $email = $this->optionNullableString($options, 'email');
 
         if ($email === null) {
             return [
@@ -47,14 +47,16 @@ class FlutterwaveProvider extends BasePaymentProvider
         $response = Http::withToken($this->secretKey)
             ->post($this->baseUrl."/transactions/{$providerPaymentId}/refund", $payload);
 
-        $data = $response->json();
+        $data = $this->asArray($response->json());
         $success = ($data['status'] ?? '') === 'success';
+
+        $metadata = isset($data['data']) && is_array($data['data']) ? $data['data'] : $data;
 
         return [
             'success' => $success,
-            'provider_refund_id' => $data['data']['id'] ?? null,
+            'provider_refund_id' => $this->jsonNullableString($response, 'data.id'),
             'status' => $success ? 'completed' : 'failed',
-            'metadata' => $data['data'] ?? $data,
+            'metadata' => $metadata,
         ];
     }
 
@@ -64,9 +66,7 @@ class FlutterwaveProvider extends BasePaymentProvider
         $response = Http::withToken($this->secretKey)
             ->get($this->baseUrl."/transactions/{$providerPaymentId}/verify");
 
-        $data = $response->json();
-
-        return match ($data['data']['status'] ?? 'unknown') {
+        return match ($this->jsonString($response, 'data.status', 'unknown')) {
             'successful' => 'completed',
             'failed' => 'failed',
             default => 'pending',
@@ -76,11 +76,11 @@ class FlutterwaveProvider extends BasePaymentProvider
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        if (empty($this->webhookSecret)) {
+        if ($this->webhookSecret === '') {
             return false;
         }
 
-        $signature = $request->header('verif-hash', '');
+        $signature = (string) $request->header('verif-hash', '');
 
         return hash_equals($this->webhookSecret, $signature);
     }
@@ -88,8 +88,17 @@ class FlutterwaveProvider extends BasePaymentProvider
     #[\Override]
     public function parseWebhook(Request $request): array
     {
-        $event = $request->input('event', '');
-        $data = $request->input('data', []);
+        $eventRaw = $request->input('event', '');
+        $event = is_string($eventRaw) ? $eventRaw : '';
+
+        $dataRaw = $request->input('data', []);
+        $data = is_array($dataRaw) ? $dataRaw : [];
+
+        $idValue = $data['id'] ?? null;
+        $providerPaymentId = is_string($idValue) ? $idValue : (is_int($idValue) ? (string) $idValue : '');
+
+        $amountValue = $data['amount'] ?? null;
+        $amount = is_numeric($amountValue) ? (int) ($amountValue * 100) : null;
 
         return [
             'event' => match ($event) {
@@ -97,14 +106,14 @@ class FlutterwaveProvider extends BasePaymentProvider
                 'charge.failed' => 'payment.failed',
                 default => $event,
             },
-            'provider_payment_id' => (string) ($data['id'] ?? ''),
+            'provider_payment_id' => $providerPaymentId,
             'status' => match ($data['status'] ?? 'unknown') {
                 'successful' => 'completed',
                 'failed' => 'failed',
                 default => 'pending',
             },
-            'amount' => isset($data['amount']) ? (int) ($data['amount'] * 100) : null,
-            'currency' => $data['currency'] ?? null,
+            'amount' => $amount,
+            'currency' => isset($data['currency']) && is_string($data['currency']) ? $data['currency'] : null,
             'metadata' => [
                 'flw_event' => $event,
                 'flw_ref' => $data['flw_ref'] ?? null,
@@ -118,7 +127,7 @@ class FlutterwaveProvider extends BasePaymentProvider
     #[\Override]
     public function isConfigured(): bool
     {
-        return ! empty($this->secretKey);
+        return $this->secretKey !== '';
     }
 
     #[\Override]
@@ -131,29 +140,35 @@ class FlutterwaveProvider extends BasePaymentProvider
 
     /**
      * Initialize a standard payment (returns redirect URL).
+     *
+     * @param  array<string, mixed>  $options
+     * @return array{success: bool, provider_payment_id: string|null, provider_reference: string|null, status: string, metadata: array<string, mixed>}
      */
     public function initializePayment(string $email, int $amount, string $currency, array $options = []): array
     {
+        $txRef = $this->optionString($options, 'reference', 'FLW-'.uniqid());
+
         $payload = [
-            'tx_ref' => $options['reference'] ?? 'FLW-'.uniqid(),
+            'tx_ref' => $txRef,
             'amount' => $amount / 100, // Flutterwave expects whole units
             'currency' => $currency,
-            'redirect_url' => $options['callback_url'] ?? '',
+            'redirect_url' => $this->optionString($options, 'callback_url'),
             'customer' => [
                 'email' => $email,
-                'name' => $options['name'] ?? null,
-                'phonenumber' => $options['phone'] ?? null,
+                'name' => $this->optionNullableString($options, 'name'),
+                'phonenumber' => $this->optionNullableString($options, 'phone'),
             ],
-            'meta' => $options['metadata'] ?? null,
+            'meta' => $this->optionArray($options, 'metadata') ?: null,
             'customizations' => [
-                'title' => $options['title'] ?? 'Payment',
-                'description' => $options['description'] ?? 'Payment',
+                'title' => $this->optionString($options, 'title', 'Payment'),
+                'description' => $this->optionString($options, 'description', 'Payment'),
             ],
         ];
 
         // Restrict to specific payment methods if specified
-        if (isset($options['payment_options'])) {
-            $payload['payment_options'] = $options['payment_options']; // e.g., "mpesa,card"
+        $paymentOptions = $this->optionNullableString($options, 'payment_options');
+        if ($paymentOptions !== null) {
+            $payload['payment_options'] = $paymentOptions; // e.g., "mpesa,card"
         }
 
         $this->logRequest('POST', $this->baseUrl.'/payments', $payload);
@@ -161,17 +176,19 @@ class FlutterwaveProvider extends BasePaymentProvider
         $response = Http::withToken($this->secretKey)
             ->post($this->baseUrl.'/payments', $payload);
 
-        $data = $response->json();
+        $data = $this->asArray($response->json());
         $success = ($data['status'] ?? '') === 'success';
+
+        $inner = isset($data['data']) && is_array($data['data']) ? $data['data'] : [];
 
         return [
             'success' => $success,
-            'provider_payment_id' => $payload['tx_ref'],
+            'provider_payment_id' => $txRef,
             'provider_reference' => null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => [
-                'payment_link' => $data['data']['link'] ?? null,
-                ...$data['data'] ?? [],
+                'payment_link' => $inner['link'] ?? null,
+                ...$inner,
             ],
         ];
     }

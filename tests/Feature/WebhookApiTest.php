@@ -97,7 +97,7 @@ class WebhookApiTest extends BaseTestCase
     public function test_webhook_rate_limiting_is_configured(): void
     {
         // Verify the billing-webhooks rate limiter is registered
-        $limiter = $this->app->make(Limit::class, [
+        $limiter = $this->app()->make(Limit::class, [
             'maxAttempts' => 0,
         ]);
 
@@ -110,8 +110,9 @@ class WebhookApiTest extends BaseTestCase
         $limit = call_user_func($rateLimiter, $request);
 
         $this->assertInstanceOf(Limit::class, $limit);
+        $rateLimitRaw = config('billing.webhooks.rate_limit', 60);
         $this->assertEquals(
-            (int) config('billing.webhooks.rate_limit', 60),
+            is_numeric($rateLimitRaw) ? (int) $rateLimitRaw : 60,
             $limit->maxAttempts
         );
     }
@@ -273,7 +274,7 @@ class WebhookApiTest extends BaseTestCase
         $mockManager = $this->createMock(PaymentManager::class);
         $mockManager->method('driver')->willReturn($mockDriver);
 
-        $this->app->instance(PaymentManager::class, $mockManager);
+        $this->app()->instance(PaymentManager::class, $mockManager);
     }
 
     /**
@@ -290,7 +291,7 @@ class WebhookApiTest extends BaseTestCase
         $mockManager = $this->createMock(PaymentManager::class);
         $mockManager->method('driver')->willReturn($mockDriver);
 
-        $this->app->instance(PaymentManager::class, $mockManager);
+        $this->app()->instance(PaymentManager::class, $mockManager);
     }
 
     protected function createPendingPayment(Company $company, string $providerPaymentId): Payment
@@ -306,6 +307,9 @@ class WebhookApiTest extends BaseTestCase
 
         $company->payments()->save($payment);
 
-        return $payment->fresh();
+        $fresh = $payment->fresh();
+        $this->assertNotNull($fresh);
+
+        return $fresh;
     }
 }

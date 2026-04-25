@@ -23,7 +23,8 @@ class InvoiceService
     public function generateForSubscription(Subscription $subscription): Invoice
     {
         $plan = $subscription->plan;
-        $currency = $plan->currency ?? config('billing.currency', 'KES');
+        $currencyDefault = config('billing.currency', 'KES');
+        $currency = $plan->currency ?? (is_string($currencyDefault) ? $currencyDefault : 'KES');
 
         // Calculate plan line item
         $subtotal = $plan->base_price;
@@ -73,7 +74,7 @@ class InvoiceService
             'tax_amount' => $taxAmount,
             'tax_rate' => $taxRate,
             'total' => $total,
-            'due_date' => now()->addDays((int) config('billing.invoices.due_days', 30)),
+            'due_date' => now()->addDays(is_numeric(config('billing.invoices.due_days', 30)) ? (int) config('billing.invoices.due_days', 30) : 30),
             'metadata' => [
                 'tax_breakdown' => $taxResult['breakdown'],
                 'tax_label' => $taxResult['tax_label'],
@@ -159,18 +160,20 @@ class InvoiceService
      */
     protected function generateInvoiceNumber(): string
     {
-        $prefix = config('billing.invoices.prefix', 'INV');
+        $prefixRaw = config('billing.invoices.prefix', 'INV');
+        $prefix = is_string($prefixRaw) ? $prefixRaw : 'INV';
         $year = now()->year;
-        $padding = (int) config('billing.invoices.sequence_padding', 4);
+        $paddingRaw = config('billing.invoices.sequence_padding', 4);
+        $padding = is_numeric($paddingRaw) ? (int) $paddingRaw : 4;
 
-        $lastInvoice = Invoice::where('number', 'like', "{$prefix}-{$year}-%")
+        $lastInvoice = Invoice::query()->where('number', 'like', "{$prefix}-{$year}-%")
             ->orderByDesc('number')
             ->first();
 
         $sequence = 1;
 
         if ($lastInvoice !== null) {
-            $parts = explode('-', (string) $lastInvoice->number);
+            $parts = explode('-', $lastInvoice->number);
             $sequence = ((int) end($parts)) + 1;
         }
 

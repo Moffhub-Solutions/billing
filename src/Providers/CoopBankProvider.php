@@ -43,32 +43,33 @@ class CoopBankProvider extends BasePaymentProvider
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
     {
-        $reference = $options['reference'] ?? 'PAY-'.uniqid();
+        $reference = $this->optionString($options, 'reference', 'PAY-'.uniqid());
         $token = $this->getAccessToken();
         $amountWhole = number_format($amount / 100, 2, '.', '');
 
         // Determine transfer type: PesaLink (to other banks) or internal
-        $transferType = $options['transfer_type'] ?? 'pesalink';
+        $transferType = $this->optionString($options, 'transfer_type', 'pesalink');
 
         $payload = [
             'MessageReference' => $reference,
-            'AccountNumber' => $options['destination_account'] ?? '',
+            'AccountNumber' => $this->optionString($options, 'destination_account'),
             'Amount' => $amountWhole,
-            'TransactionCurrency' => $currency ?: 'KES',
-            'Narration' => $options['description'] ?? 'Payment',
-            'CallBackUrl' => $options['callback_url'] ?? $this->callbackUrl,
+            'TransactionCurrency' => $currency !== '' ? $currency : 'KES',
+            'Narration' => $this->optionString($options, 'description', 'Payment'),
+            'CallBackUrl' => $this->optionString($options, 'callback_url', $this->callbackUrl),
         ];
 
         if ($transferType === 'pesalink') {
-            $payload['BankCode'] = $options['bank_code'] ?? '';
+            $payload['BankCode'] = $this->optionString($options, 'bank_code');
             $endpoint = '/FundsTransfer/External/A2A/PesaLink';
         } else {
             $payload['SourceAccountNumber'] = $this->accountNumber;
             $endpoint = '/FundsTransfer/Internal/A2A';
         }
 
-        if (isset($options['phone'])) {
-            $payload['PhoneNumber'] = $this->formatPhone($options['phone']);
+        $phone = $this->optionNullableString($options, 'phone');
+        if ($phone !== null) {
+            $payload['PhoneNumber'] = $this->formatPhone($phone);
         }
 
         $this->logRequest('POST', $this->baseUrl.$endpoint, $payload);
@@ -76,14 +77,18 @@ class CoopBankProvider extends BasePaymentProvider
         $response = Http::withToken($token)
             ->post($this->baseUrl.$endpoint, $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         $success = ($data['MessageCode'] ?? '') === '0' || ($data['status'] ?? '') === 'success';
 
+        $providerPaymentId = isset($data['MessageReference']) && is_string($data['MessageReference'])
+            ? $data['MessageReference']
+            : $reference;
+
         return [
             'success' => $success,
-            'provider_payment_id' => $data['MessageReference'] ?? $reference,
-            'provider_reference' => $data['TransactionReference'] ?? null,
+            'provider_payment_id' => $providerPaymentId,
+            'provider_reference' => isset($data['TransactionReference']) && is_string($data['TransactionReference']) ? $data['TransactionReference'] : null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -92,18 +97,18 @@ class CoopBankProvider extends BasePaymentProvider
     #[\Override]
     public function refund(string $providerPaymentId, ?int $amount = null, array $options = []): array
     {
-        $reference = $options['reference'] ?? 'REF-'.uniqid();
+        $reference = $this->optionString($options, 'reference', 'REF-'.uniqid());
         $token = $this->getAccessToken();
         $amountWhole = $amount !== null ? number_format($amount / 100, 2, '.', '') : '0.00';
 
         $payload = [
             'MessageReference' => $reference,
             'SourceAccountNumber' => $this->accountNumber,
-            'AccountNumber' => $options['destination_account'] ?? '',
+            'AccountNumber' => $this->optionString($options, 'destination_account'),
             'Amount' => $amountWhole,
             'TransactionCurrency' => 'KES',
-            'Narration' => $options['description'] ?? "Refund for {$providerPaymentId}",
-            'CallBackUrl' => $options['callback_url'] ?? $this->callbackUrl,
+            'Narration' => $this->optionString($options, 'description', "Refund for {$providerPaymentId}"),
+            'CallBackUrl' => $this->optionString($options, 'callback_url', $this->callbackUrl),
         ];
 
         $this->logRequest('POST', $this->baseUrl.'/FundsTransfer/Internal/A2A', $payload);
@@ -111,13 +116,17 @@ class CoopBankProvider extends BasePaymentProvider
         $response = Http::withToken($token)
             ->post($this->baseUrl.'/FundsTransfer/Internal/A2A', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         $success = ($data['MessageCode'] ?? '') === '0' || ($data['status'] ?? '') === 'success';
 
+        $providerRefundId = isset($data['MessageReference']) && is_string($data['MessageReference'])
+            ? $data['MessageReference']
+            : $reference;
+
         return [
             'success' => $success,
-            'provider_refund_id' => $data['MessageReference'] ?? $reference,
+            'provider_refund_id' => $providerRefundId,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -133,7 +142,7 @@ class CoopBankProvider extends BasePaymentProvider
                 'MessageReference' => $providerPaymentId,
             ]);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
         $status = $data['TransactionStatus'] ?? $data['MessageCode'] ?? null;
 
         return match ($status) {
@@ -161,18 +170,22 @@ class CoopBankProvider extends BasePaymentProvider
         $messageCode = $data['MessageCode'] ?? $data['message_code'] ?? null;
         $success = $messageCode === '0' || ($data['status'] ?? '') === 'success';
 
-        $amount = isset($data['Amount']) ? (int) ((float) $data['Amount'] * 100) : null;
+        $amountUpper = $data['Amount'] ?? null;
+        $amountLower = $data['amount'] ?? null;
 
-        if ($amount === null && isset($data['amount'])) {
-            $amount = (int) ((float) $data['amount'] * 100);
-        }
+        $amount = is_numeric($amountUpper)
+            ? (int) ((float) $amountUpper * 100)
+            : (is_numeric($amountLower) ? (int) ((float) $amountLower * 100) : null);
+
+        $providerPaymentId = $data['MessageReference'] ?? $data['message_reference'] ?? null;
+        $currency = $data['TransactionCurrency'] ?? $data['currency'] ?? 'KES';
 
         return [
             'event' => $success ? 'payment.completed' : 'payment.failed',
-            'provider_payment_id' => $data['MessageReference'] ?? $data['message_reference'] ?? null,
+            'provider_payment_id' => is_string($providerPaymentId) ? $providerPaymentId : null,
             'status' => $success ? 'completed' : 'failed',
             'amount' => $amount,
-            'currency' => $data['TransactionCurrency'] ?? $data['currency'] ?? 'KES',
+            'currency' => is_string($currency) ? $currency : 'KES',
             'metadata' => [
                 'transaction_reference' => $data['TransactionReference'] ?? $data['transaction_reference'] ?? null,
                 'message_description' => $data['MessageDescription'] ?? $data['message_description'] ?? null,
@@ -185,7 +198,7 @@ class CoopBankProvider extends BasePaymentProvider
     #[\Override]
     public function isConfigured(): bool
     {
-        return ! empty($this->consumerKey) && ! empty($this->consumerSecret);
+        return $this->consumerKey !== '' && $this->consumerSecret !== '';
     }
 
     #[\Override]
@@ -200,7 +213,7 @@ class CoopBankProvider extends BasePaymentProvider
     {
         $cacheKey = 'billing:coopbank:access_token:'.$this->consumerKey;
 
-        return Cache::remember($cacheKey, 3300, function (): string {
+        $token = Cache::remember($cacheKey, 3300, function (): string {
             $credentials = base64_encode($this->consumerKey.':'.$this->consumerSecret);
 
             $response = Http::withHeaders([
@@ -209,12 +222,19 @@ class CoopBankProvider extends BasePaymentProvider
                 'grant_type' => 'client_credentials',
             ]);
 
-            return $response->json('access_token') ?? '';
+            $accessToken = $response->json('access_token');
+
+            return is_string($accessToken) ? $accessToken : '';
         });
+
+        return $token;
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────
 
+    /**
+     * @return array<string, mixed>
+     */
     public function getAccountBalance(?string $accountNumber = null): array
     {
         $token = $this->getAccessToken();
@@ -225,7 +245,7 @@ class CoopBankProvider extends BasePaymentProvider
                 'AccountNumber' => $accountNumber ?? $this->accountNumber,
             ]);
 
-        return $response->json() ?? [];
+        return $this->asArray($response->json());
     }
 
     protected function resolveBaseUrl(): string
@@ -237,7 +257,8 @@ class CoopBankProvider extends BasePaymentProvider
 
     protected function formatPhone(string $phone): string
     {
-        $phone = preg_replace('/[^0-9]/', '', $phone) ?? $phone;
+        $cleaned = preg_replace('/[^0-9]/', '', $phone);
+        $phone = is_string($cleaned) ? $cleaned : $phone;
 
         if (str_starts_with($phone, '0')) {
             $phone = '254'.substr($phone, 1);

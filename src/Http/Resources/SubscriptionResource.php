@@ -6,17 +6,24 @@ namespace Moffhub\Billing\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Moffhub\Billing\Models\Subscription;
 
+/**
+ * @mixin Subscription
+ */
 class SubscriptionResource extends JsonResource
 {
+    /**
+     * @return array<string, mixed>
+     */
     #[\Override]
     public function toArray(Request $request): array
     {
         return [
             'id' => $this->ulid,
             'plan' => $this->whenLoaded('plan', fn (): PlanResource => new PlanResource($this->plan)),
-            'status' => $this->status?->value,
-            'status_label' => $this->status?->label(),
+            'status' => $this->status->value,
+            'status_label' => $this->status->label(),
             'is_active' => $this->isActive(),
             'on_trial' => $this->onTrial(),
             'on_grace_period' => $this->onGracePeriod(),
@@ -28,8 +35,8 @@ class SubscriptionResource extends JsonResource
             'payment_provider' => $this->payment_provider,
             'addons' => SubscriptionAddonResource::collection($this->whenLoaded('addons')),
             'metadata' => $this->when($this->metadata !== null, $this->metadata),
-            'created_at' => $this->created_at?->toIso8601ZuluString(),
-            'updated_at' => $this->updated_at?->toIso8601ZuluString(),
+            'created_at' => $this->created_at->toIso8601ZuluString(),
+            'updated_at' => $this->updated_at->toIso8601ZuluString(),
         ];
     }
 }

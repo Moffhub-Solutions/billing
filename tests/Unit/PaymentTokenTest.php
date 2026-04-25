@@ -103,7 +103,9 @@ class PaymentTokenTest extends BaseTestCase
             'is_reusable' => true,
         ]);
 
-        $this->assertEquals($default->id, $this->company->defaultPaymentToken()->id);
+        $defaultToken = $this->company->defaultPaymentToken();
+        $this->assertNotNull($defaultToken);
+        $this->assertEquals($default->id, $defaultToken->id);
     }
 
     public function test_usable_scope(): void

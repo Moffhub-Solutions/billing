@@ -159,7 +159,9 @@ class CouponTest extends BaseTestCase
 
         $this->assertEquals(225000, $result['discount_amount']); // 30% of 750000
         $this->assertEquals(525000, $result['final_amount']);
-        $this->assertEquals(1, $coupon->fresh()->times_redeemed);
+        $couponFresh = $coupon->fresh();
+        $this->assertNotNull($couponFresh);
+        $this->assertEquals(1, $couponFresh->times_redeemed);
     }
 
     public function test_invalid_promotion_code_throws(): void
@@ -192,7 +194,9 @@ class CouponTest extends BaseTestCase
         $this->assertEquals(150000, $result['discount_amount']);
         $this->assertEquals(850000, $result['final_amount']);
         // Preview should NOT increment counters
-        $this->assertEquals(0, $coupon->fresh()->times_redeemed);
+        $couponFresh = $coupon->fresh();
+        $this->assertNotNull($couponFresh);
+        $this->assertEquals(0, $couponFresh->times_redeemed);
     }
 
     public function test_plan_restriction(): void

@@ -15,10 +15,14 @@ class InvoiceItemFactory extends Factory
 {
     protected $model = InvoiceItem::class;
 
+    /**
+     * @return array<string, mixed>
+     */
     public function definition(): array
     {
         $quantity = fake()->numberBetween(1, 5);
-        $unitPrice = fake()->randomElement([100000, 250000, 500000]);
+        $unitPriceValue = fake()->randomElement([100000, 250000, 500000]);
+        $unitPrice = is_int($unitPriceValue) ? $unitPriceValue : 100000;
 
         return [
             'invoice_id' => Invoice::factory(),

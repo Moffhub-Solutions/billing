@@ -6,15 +6,15 @@ namespace Moffhub\Billing\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
 use Illuminate\Support\Str;
 use Moffhub\Billing\Enums\InvoiceStatus;
 use Moffhub\Billing\Events\PaymentReceived;
 use Moffhub\Billing\Http\Requests\StoreInvoiceRequest;
 use Moffhub\Billing\Http\Resources\InvoiceResource;
 use Moffhub\Billing\Models\Invoice;
+use Moffhub\Billing\Models\Payment;
 
-class InvoiceController extends Controller
+class InvoiceController extends BillingController
 {
     /**
      * List invoices for the authenticated billable.
@@ -57,14 +57,25 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'No billable entity found.'], 404);
         }
 
+        $currencyDefault = config('billing.currency', 'KES');
+        $currency = $request->input('currency', is_string($currencyDefault) ? $currencyDefault : 'KES');
+
+        $taxRateDefault = config('billing.tax.default_rate', 16.0);
+        $taxRateInput = $request->input('tax_rate', $taxRateDefault);
+        $taxRate = is_numeric($taxRateInput) ? (float) $taxRateInput : 16.0;
+
+        $dueDaysRaw = config('billing.invoices.due_days', 30);
+        $dueDays = is_numeric($dueDaysRaw) ? (int) $dueDaysRaw : 30;
+        $dueDate = $request->input('due_date', now()->addDays($dueDays));
+
         $invoice = new Invoice([
             'ulid' => Str::ulid()->toBase32(),
             'number' => $this->generateInvoiceNumber(),
             'subscription_id' => $request->input('subscription_id'),
             'status' => InvoiceStatus::DRAFT,
-            'currency' => $request->input('currency', config('billing.currency', 'KES')),
-            'tax_rate' => $request->input('tax_rate', config('billing.tax.default_rate', 16.0)),
-            'due_date' => $request->input('due_date', now()->addDays(config('billing.invoices.due_days', 30))),
+            'currency' => $currency,
+            'tax_rate' => $taxRate,
+            'due_date' => $dueDate,
             'notes' => $request->input('notes'),
             'metadata' => $request->input('metadata'),
         ]);
@@ -74,14 +85,29 @@ class InvoiceController extends Controller
         // Add line items
         $subtotal = 0;
 
-        foreach ($request->input('items', []) as $item) {
-            $itemTotal = ($item['quantity'] ?? 1) * ($item['unit_price'] ?? 0);
+        $itemsRaw = $request->input('items', []);
+        $items = is_array($itemsRaw) ? $itemsRaw : [];
+
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $quantityRaw = $item['quantity'] ?? 1;
+            $quantity = is_numeric($quantityRaw) ? (int) $quantityRaw : 1;
+
+            $unitPriceRaw = $item['unit_price'] ?? 0;
+            $unitPrice = is_numeric($unitPriceRaw) ? (int) $unitPriceRaw : 0;
+
+            $itemTotal = $quantity * $unitPrice;
             $subtotal += $itemTotal;
 
+            $description = $item['description'] ?? '';
+
             $invoice->items()->create([
-                'description' => $item['description'],
-                'quantity' => $item['quantity'] ?? 1,
-                'unit_price' => $item['unit_price'] ?? 0,
+                'description' => is_string($description) ? $description : '',
+                'quantity' => $quantity,
+                'unit_price' => $unitPrice,
                 'total' => $itemTotal,
                 'feature_slug' => $item['feature_slug'] ?? null,
                 'period_start' => $item['period_start'] ?? null,
@@ -100,9 +126,11 @@ class InvoiceController extends Controller
             'total' => $subtotal + $taxAmount,
         ]);
 
+        $fresh = $invoice->fresh();
+
         return response()->json([
             'message' => 'Invoice created.',
-            'data' => new InvoiceResource($invoice->fresh()->load('items')),
+            'data' => new InvoiceResource($fresh !== null ? $fresh->load('items') : $invoice),
         ], 201);
     }
 
@@ -111,7 +139,7 @@ class InvoiceController extends Controller
      */
     public function show(int $invoice): JsonResponse
     {
-        $invoice = Invoice::with('items', 'payments')->findOrFail($invoice);
+        $invoice = Invoice::query()->with('items', 'payments')->findOrFail($invoice);
 
         return response()->json([
             'data' => new InvoiceResource($invoice),
@@ -123,7 +151,7 @@ class InvoiceController extends Controller
      */
     public function send(int $invoice): JsonResponse
     {
-        $invoice = Invoice::findOrFail($invoice);
+        $invoice = Invoice::query()->findOrFail($invoice);
 
         if ($invoice->status !== InvoiceStatus::DRAFT) {
             return response()->json(['message' => 'Only draft invoices can be sent.'], 422);
@@ -142,7 +170,7 @@ class InvoiceController extends Controller
      */
     public function void(int $invoice): JsonResponse
     {
-        $invoice = Invoice::findOrFail($invoice);
+        $invoice = Invoice::query()->findOrFail($invoice);
 
         if ($invoice->status === InvoiceStatus::PAID) {
             return response()->json(['message' => 'Cannot void a paid invoice. Issue a credit note instead.'], 422);
@@ -166,11 +194,14 @@ class InvoiceController extends Controller
             'notes' => ['sometimes', 'string', 'max:1000'],
         ]);
 
-        $invoice = Invoice::findOrFail($invoice);
+        $invoice = Invoice::query()->findOrFail($invoice);
 
         if ($invoice->isPaid()) {
             return response()->json(['message' => 'Invoice is already paid.'], 422);
         }
+
+        $user = $request->user();
+        $markedBy = $user?->getAuthIdentifier();
 
         $invoice->update([
             'status' => InvoiceStatus::PAID,
@@ -179,14 +210,16 @@ class InvoiceController extends Controller
                 'manual_payment' => [
                     'reference' => $request->input('payment_reference'),
                     'notes' => $request->input('notes'),
-                    'marked_by' => $request->user()?->getAuthIdentifier(),
+                    'marked_by' => $markedBy,
                     'marked_at' => now()->toIso8601String(),
                 ],
             ]),
         ]);
 
+        $billable = $invoice->billable;
+
         // Create a corresponding payment record
-        $payment = $invoice->billable->payments()->create([
+        $payment = $billable->morphMany(Payment::class, 'billable')->create([
             'ulid' => Str::ulid()->toBase32(),
             'subscription_id' => $invoice->subscription_id,
             'invoice_id' => $invoice->id,
@@ -201,16 +234,18 @@ class InvoiceController extends Controller
 
         PaymentReceived::dispatch(
             $payment,
-            $invoice->billable,
+            $billable,
             $payment->amount,
             $payment->currency,
             $payment->payment_method?->value,
             $payment->provider_reference,
         );
 
+        $fresh = $invoice->fresh();
+
         return response()->json([
             'message' => 'Invoice marked as paid.',
-            'data' => new InvoiceResource($invoice->fresh()->load('items')),
+            'data' => new InvoiceResource($fresh !== null ? $fresh->load('items') : $invoice),
         ]);
     }
 
@@ -219,42 +254,23 @@ class InvoiceController extends Controller
      */
     protected function generateInvoiceNumber(): string
     {
-        $prefix = config('billing.invoices.prefix', 'INV');
+        $prefixRaw = config('billing.invoices.prefix', 'INV');
+        $prefix = is_string($prefixRaw) ? $prefixRaw : 'INV';
         $year = now()->year;
-        $padding = config('billing.invoices.sequence_padding', 4);
+        $paddingRaw = config('billing.invoices.sequence_padding', 4);
+        $padding = is_numeric($paddingRaw) ? (int) $paddingRaw : 4;
 
-        $lastInvoice = Invoice::where('number', 'like', "{$prefix}-{$year}-%")
+        $lastInvoice = Invoice::query()->where('number', 'like', "{$prefix}-{$year}-%")
             ->orderByDesc('number')
             ->first();
 
         $sequence = 1;
 
         if ($lastInvoice !== null) {
-            $parts = explode('-', (string) $lastInvoice->number);
+            $parts = explode('-', $lastInvoice->number);
             $sequence = ((int) end($parts)) + 1;
         }
 
         return sprintf('%s-%d-%s', $prefix, $year, str_pad((string) $sequence, $padding, '0', STR_PAD_LEFT));
-    }
-
-    protected function resolveBillable(Request $request): mixed
-    {
-        $user = $request->user();
-
-        if ($user === null) {
-            return null;
-        }
-
-        if (method_exists($user, 'subscriptions')) {
-            return $user;
-        }
-
-        $billableRelation = config('billing.billable_relation', 'company');
-
-        if (method_exists($user, $billableRelation)) {
-            return $user->{$billableRelation};
-        }
-
-        return null;
     }
 }

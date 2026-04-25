@@ -19,7 +19,8 @@ class KenyanTaxCalculator implements TaxCalculatorInterface
      */
     public function calculate(int $amount, string $currency, array $context = []): array
     {
-        $category = $context['tax_category'] ?? 'standard';
+        $categoryRaw = $context['tax_category'] ?? 'standard';
+        $category = is_string($categoryRaw) ? $categoryRaw : 'standard';
         $applyWht = $context['apply_wht'] ?? false;
 
         $vatRate = $this->resolveVatRate($category);
@@ -44,6 +45,8 @@ class KenyanTaxCalculator implements TaxCalculatorInterface
 
     /**
      * {@inheritDoc}
+     *
+     * @param  array<string, mixed>  $context
      */
     public function isExempt(array $context = []): bool
     {

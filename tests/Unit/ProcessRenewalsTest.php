@@ -6,6 +6,7 @@ namespace Moffhub\Billing\Tests\Unit;
 
 use Illuminate\Support\Facades\Event;
 use Mockery;
+use Mockery\ExpectationInterface;
 use Moffhub\Billing\Enums\BillingCycle;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Enums\SubscriptionStatus;
@@ -62,6 +63,8 @@ class ProcessRenewalsTest extends BaseTestCase
         $subscription->refresh();
 
         $this->assertEquals(SubscriptionStatus::ACTIVE, $subscription->status);
+        $this->assertNotNull($subscription->current_period_end);
+        $this->assertNotNull($subscription->current_period_start);
         $this->assertTrue($subscription->current_period_end->isFuture());
         $this->assertTrue($subscription->current_period_start->isToday());
 
@@ -130,8 +133,10 @@ class ProcessRenewalsTest extends BaseTestCase
         $subscription = $this->createExpiredSubscription();
         $subscription->cancel(immediately: false);
 
-        $this->assertEquals(SubscriptionStatus::ACTIVE, $subscription->fresh()->status);
-        $this->assertNotNull($subscription->fresh()->cancelled_at);
+        $reloaded = $subscription->fresh();
+        $this->assertNotNull($reloaded);
+        $this->assertEquals(SubscriptionStatus::ACTIVE, $reloaded->status);
+        $this->assertNotNull($reloaded->cancelled_at);
 
         $this->mockSuccessfulPayment();
 
@@ -187,6 +192,7 @@ class ProcessRenewalsTest extends BaseTestCase
         $subscription->refresh();
 
         $this->assertEquals(SubscriptionStatus::ACTIVE, $subscription->status);
+        $this->assertNotNull($subscription->current_period_end);
         $this->assertTrue($subscription->current_period_end->isFuture());
 
         $payment = Payment::where('subscription_id', $subscription->id)
@@ -235,6 +241,7 @@ class ProcessRenewalsTest extends BaseTestCase
         $subscription->refresh();
 
         $this->assertEquals(SubscriptionStatus::ACTIVE, $subscription->status);
+        $this->assertNotNull($subscription->current_period_end);
         $this->assertTrue($subscription->current_period_end->isFuture());
 
         Event::assertDispatched(SubscriptionRenewed::class);
@@ -283,7 +290,7 @@ class ProcessRenewalsTest extends BaseTestCase
             'limits' => ['max_posts' => 100],
         ]);
 
-        $result = $calculator->calculate($subscription->fresh(), $premiumPlan);
+        $result = $calculator->calculate($subscription->fresh() ?? $subscription, $premiumPlan);
 
         $this->assertArrayHasKey('credit', $result);
         $this->assertArrayHasKey('charge', $result);
@@ -320,7 +327,7 @@ class ProcessRenewalsTest extends BaseTestCase
             'current_period_end' => now()->addDays(15),
         ]);
 
-        $result = $calculator->calculate($subscription->fresh(), $this->plan);
+        $result = $calculator->calculate($subscription->fresh() ?? $subscription, $this->plan);
 
         // Net should be negative for a downgrade (refund owed)
         $this->assertLessThan(0, $result['net']);
@@ -337,7 +344,7 @@ class ProcessRenewalsTest extends BaseTestCase
             'current_period_end' => now()->addDays(15),
         ]);
 
-        $result = $calculator->calculate($subscription->fresh(), $this->plan);
+        $result = $calculator->calculate($subscription->fresh() ?? $subscription, $this->plan);
 
         // Same plan = net should be zero
         $this->assertEquals(0, $result['net']);
@@ -355,7 +362,10 @@ class ProcessRenewalsTest extends BaseTestCase
             'current_period_end' => now()->subDay(),
         ]);
 
-        return $subscription->fresh();
+        $fresh = $subscription->fresh();
+        $this->assertNotNull($fresh);
+
+        return $fresh;
     }
 
     protected function createExpiredTrialSubscription(): Subscription
@@ -369,7 +379,10 @@ class ProcessRenewalsTest extends BaseTestCase
             'trial_ends_at' => now()->subDay(),
         ]);
 
-        return $subscription->fresh();
+        $fresh = $subscription->fresh();
+        $this->assertNotNull($fresh);
+
+        return $fresh;
     }
 
     protected function createPastDueSubscription(int $daysAgo): Subscription
@@ -382,42 +395,63 @@ class ProcessRenewalsTest extends BaseTestCase
             'current_period_end' => now()->subDays($daysAgo),
         ]);
 
-        return $subscription->fresh();
+        $fresh = $subscription->fresh();
+        $this->assertNotNull($fresh);
+
+        return $fresh;
     }
 
     protected function mockSuccessfulPayment(): void
     {
         $mockProvider = Mockery::mock(ManualProvider::class)->makePartial();
-        $mockProvider->shouldReceive('charge')->andReturn([
-            'success' => true,
-            'provider_payment_id' => 'test_pay_'.uniqid(),
-            'provider_reference' => null,
-            'status' => 'completed',
-            'metadata' => [],
-        ]);
+        $chargeExp = $mockProvider->shouldReceive('charge');
+        if ($chargeExp instanceof ExpectationInterface) {
+            $chargeExp->andReturn([
+                'success' => true,
+                'provider_payment_id' => 'test_pay_'.uniqid(),
+                'provider_reference' => null,
+                'status' => 'completed',
+                'metadata' => [],
+            ]);
+        }
 
         $mockManager = Mockery::mock(PaymentManager::class)->makePartial();
-        $mockManager->shouldReceive('driver')->andReturn($mockProvider);
-        $mockManager->shouldReceive('getDefaultDriver')->andReturn('manual');
+        $driverExp = $mockManager->shouldReceive('driver');
+        if ($driverExp instanceof ExpectationInterface) {
+            $driverExp->andReturn($mockProvider);
+        }
+        $defaultExp = $mockManager->shouldReceive('getDefaultDriver');
+        if ($defaultExp instanceof ExpectationInterface) {
+            $defaultExp->andReturn('manual');
+        }
 
-        $this->app->instance(PaymentManager::class, $mockManager);
+        $this->app()->instance(PaymentManager::class, $mockManager);
     }
 
     protected function mockFailedPayment(): void
     {
         $mockProvider = Mockery::mock(ManualProvider::class)->makePartial();
-        $mockProvider->shouldReceive('charge')->andReturn([
-            'success' => false,
-            'provider_payment_id' => null,
-            'provider_reference' => null,
-            'status' => 'failed',
-            'metadata' => ['error' => 'Insufficient funds'],
-        ]);
+        $chargeExp = $mockProvider->shouldReceive('charge');
+        if ($chargeExp instanceof ExpectationInterface) {
+            $chargeExp->andReturn([
+                'success' => false,
+                'provider_payment_id' => null,
+                'provider_reference' => null,
+                'status' => 'failed',
+                'metadata' => ['error' => 'Insufficient funds'],
+            ]);
+        }
 
         $mockManager = Mockery::mock(PaymentManager::class)->makePartial();
-        $mockManager->shouldReceive('driver')->andReturn($mockProvider);
-        $mockManager->shouldReceive('getDefaultDriver')->andReturn('manual');
+        $driverExp = $mockManager->shouldReceive('driver');
+        if ($driverExp instanceof ExpectationInterface) {
+            $driverExp->andReturn($mockProvider);
+        }
+        $defaultExp = $mockManager->shouldReceive('getDefaultDriver');
+        if ($defaultExp instanceof ExpectationInterface) {
+            $defaultExp->andReturn('manual');
+        }
 
-        $this->app->instance(PaymentManager::class, $mockManager);
+        $this->app()->instance(PaymentManager::class, $mockManager);
     }
 }

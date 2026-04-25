@@ -32,7 +32,7 @@ class PaymentModelTest extends BaseTestCase
             'payment_provider' => 'manual',
         ]);
 
-        $this->assertNotNull($payment->id);
+        $this->assertGreaterThan(0, $payment->id);
         $this->assertEquals(500000, $payment->amount);
         $this->assertEquals('KES', $payment->currency);
     }

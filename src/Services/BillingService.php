@@ -18,6 +18,8 @@ class BillingService
 
     /**
      * Get all active plans, ordered by sort_order.
+     *
+     * @return Collection<int, Plan>
      */
     public function plans(): Collection
     {
@@ -29,11 +31,13 @@ class BillingService
      */
     public function plan(string $slug): ?Plan
     {
-        return Plan::where('slug', $slug)->first();
+        return Plan::query()->where('slug', $slug)->first();
     }
 
     /**
      * Get all active features.
+     *
+     * @return Collection<int, Feature>
      */
     public function features(): Collection
     {
@@ -42,6 +46,8 @@ class BillingService
 
     /**
      * Get all available add-on features.
+     *
+     * @return Collection<int, Feature>
      */
     public function addons(): Collection
     {

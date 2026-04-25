@@ -16,9 +16,13 @@ class PlanFactory extends Factory
 {
     protected $model = Plan::class;
 
+    /**
+     * @return array<string, mixed>
+     */
     public function definition(): array
     {
-        $name = fake()->unique()->words(2, true);
+        $nameValue = fake()->unique()->words(2, true);
+        $name = is_string($nameValue) ? $nameValue : 'plan';
 
         return [
             'ulid' => Str::ulid()->toBase32(),

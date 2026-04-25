@@ -42,25 +42,27 @@ class KcbBuniProvider extends BasePaymentProvider
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
     {
-        $reference = $options['reference'] ?? 'PAY-'.uniqid();
-        $paymentChannel = $options['payment_channel'] ?? 'mpesa'; // mpesa, airtel, tkash, vooma, bank
+        $reference = $this->optionString($options, 'reference', 'PAY-'.uniqid());
+        $paymentChannel = $this->optionString($options, 'payment_channel', 'mpesa'); // mpesa, airtel, tkash, vooma, bank
 
         $payload = [
             'merchant_code' => $this->merchantCode,
             'reference' => $reference,
             'amount' => (int) ceil($amount / 100),
-            'currency' => $currency ?: 'KES',
+            'currency' => $currency !== '' ? $currency : 'KES',
             'payment_channel' => $paymentChannel,
-            'callback_url' => $options['callback_url'] ?? $this->callbackUrl,
-            'description' => $options['description'] ?? 'Payment',
+            'callback_url' => $this->optionString($options, 'callback_url', $this->callbackUrl),
+            'description' => $this->optionString($options, 'description', 'Payment'),
         ];
 
-        if (isset($options['phone'])) {
-            $payload['phone'] = $this->formatPhone($options['phone']);
+        $phone = $this->optionNullableString($options, 'phone');
+        if ($phone !== null) {
+            $payload['phone'] = $this->formatPhone($phone);
         }
 
-        if (isset($options['account_number'])) {
-            $payload['account_number'] = $options['account_number'];
+        $accountNumber = $this->optionNullableString($options, 'account_number');
+        if ($accountNumber !== null) {
+            $payload['account_number'] = $accountNumber;
         }
 
         $this->logRequest('POST', $this->baseUrl.'/payments/initiate', $payload);
@@ -70,14 +72,14 @@ class KcbBuniProvider extends BasePaymentProvider
             'X-Api-Secret' => $this->apiSecret,
         ])->post($this->baseUrl.'/payments/initiate', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         $success = ($data['status'] ?? '') === 'success' || ($data['response_code'] ?? '') === '00';
 
         return [
             'success' => $success,
-            'provider_payment_id' => $data['transaction_id'] ?? null,
-            'provider_reference' => $data['reference'] ?? $reference,
+            'provider_payment_id' => isset($data['transaction_id']) && is_string($data['transaction_id']) ? $data['transaction_id'] : null,
+            'provider_reference' => isset($data['reference']) && is_string($data['reference']) ? $data['reference'] : $reference,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -90,7 +92,7 @@ class KcbBuniProvider extends BasePaymentProvider
             'merchant_code' => $this->merchantCode,
             'transaction_id' => $providerPaymentId,
             'amount' => $amount !== null ? (int) ceil($amount / 100) : null,
-            'reason' => $options['reason'] ?? 'Refund',
+            'reason' => $this->optionString($options, 'reason', 'Refund'),
         ];
 
         $this->logRequest('POST', $this->baseUrl.'/payments/refund', $payload);
@@ -100,13 +102,13 @@ class KcbBuniProvider extends BasePaymentProvider
             'X-Api-Secret' => $this->apiSecret,
         ])->post($this->baseUrl.'/payments/refund', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         $success = ($data['status'] ?? '') === 'success' || ($data['response_code'] ?? '') === '00';
 
         return [
             'success' => $success,
-            'provider_refund_id' => $data['refund_id'] ?? null,
+            'provider_refund_id' => isset($data['refund_id']) && is_string($data['refund_id']) ? $data['refund_id'] : null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -120,7 +122,7 @@ class KcbBuniProvider extends BasePaymentProvider
             'X-Api-Secret' => $this->apiSecret,
         ])->get($this->baseUrl.'/payments/status/'.$providerPaymentId);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
         $status = $data['transaction_status'] ?? $data['status'] ?? null;
 
         return match ($status) {
@@ -137,9 +139,10 @@ class KcbBuniProvider extends BasePaymentProvider
         // KCB IPN supports signature verification via public key (SHA-1)
         // but many deployments rely on URL obscurity + IP whitelisting.
         // Verify the payload has a recognizable IPN structure.
-        $signature = $request->header('X-KCB-Signature', $request->header('signature', ''));
+        $defaultSig = (string) $request->header('signature', '');
+        $signature = (string) $request->header('X-KCB-Signature', $defaultSig);
 
-        if (! empty($signature) && ! empty($this->apiSecret)) {
+        if ($signature !== '' && $this->apiSecret !== '') {
             $payload = $request->getContent();
             $expected = hash_hmac('sha256', $payload, $this->apiSecret);
 
@@ -165,14 +168,17 @@ class KcbBuniProvider extends BasePaymentProvider
 
         // Generic fallback
         $data = $request->all();
-        $amount = isset($data['amount']) ? (int) ((float) $data['amount'] * 100) : null;
+        $amountValue = $data['amount'] ?? null;
+        $amount = is_numeric($amountValue) ? (int) ((float) $amountValue * 100) : null;
+
+        $providerPaymentId = $data['transaction_id'] ?? $data['transactionID'] ?? null;
 
         return [
             'event' => 'payment.completed',
-            'provider_payment_id' => $data['transaction_id'] ?? $data['transactionID'] ?? null,
+            'provider_payment_id' => is_string($providerPaymentId) ? $providerPaymentId : null,
             'status' => 'completed',
             'amount' => $amount,
-            'currency' => $data['currency'] ?? 'KES',
+            'currency' => isset($data['currency']) && is_string($data['currency']) ? $data['currency'] : 'KES',
             'metadata' => $data,
         ];
     }
@@ -180,7 +186,7 @@ class KcbBuniProvider extends BasePaymentProvider
     #[\Override]
     public function isConfigured(): bool
     {
-        return ! empty($this->apiKey) && ! empty($this->apiSecret);
+        return $this->apiKey !== '' && $this->apiSecret !== '';
     }
 
     #[\Override]
@@ -197,35 +203,49 @@ class KcbBuniProvider extends BasePaymentProvider
             || $request->has('requestPayload.additionalData.notificationData');
     }
 
+    /**
+     * @return array{event: string, provider_payment_id: string|null, status: string, amount: int|null, currency: string, metadata: array<string, mixed>}
+     */
     protected function parseV2Ipn(Request $request): array
     {
         $payload = $request->all();
-        $header = $payload['header'] ?? [];
-        $notificationData = $payload['requestPayload']['additionalData']['notificationData'] ?? [];
-        $primaryData = $payload['requestPayload']['primaryData'] ?? [];
+        $headerRaw = $payload['header'] ?? [];
+        $header = is_array($headerRaw) ? $headerRaw : [];
 
-        $amount = isset($notificationData['transactionAmt'])
-            ? (int) ((float) $notificationData['transactionAmt'] * 100)
-            : null;
+        $requestPayload = $payload['requestPayload'] ?? [];
+        $requestPayloadArr = is_array($requestPayload) ? $requestPayload : [];
+
+        $additionalData = $requestPayloadArr['additionalData'] ?? [];
+        $additionalDataArr = is_array($additionalData) ? $additionalData : [];
+        $notificationData = $additionalDataArr['notificationData'] ?? [];
+        $notificationDataArr = is_array($notificationData) ? $notificationData : [];
+
+        $primaryDataRaw = $requestPayloadArr['primaryData'] ?? [];
+        $primaryData = is_array($primaryDataRaw) ? $primaryDataRaw : [];
+
+        $txAmt = $notificationDataArr['transactionAmt'] ?? null;
+        $amount = is_numeric($txAmt) ? (int) ((float) $txAmt * 100) : null;
+
+        $providerPaymentId = $notificationDataArr['transactionID'] ?? null;
 
         return [
             'event' => 'payment.completed',
-            'provider_payment_id' => $notificationData['transactionID'] ?? null,
+            'provider_payment_id' => is_string($providerPaymentId) ? $providerPaymentId : null,
             'status' => 'completed',
             'amount' => $amount,
-            'currency' => $notificationData['currency'] ?? 'KES',
+            'currency' => isset($notificationDataArr['currency']) && is_string($notificationDataArr['currency']) ? $notificationDataArr['currency'] : 'KES',
             'metadata' => [
                 'message_id' => $header['messageID'] ?? null,
                 'channel_code' => $header['channelCode'] ?? null,
                 'timestamp' => $header['timeStamp'] ?? null,
                 'business_key' => $primaryData['businessKey'] ?? null,
-                'customer_reference' => $notificationData['businessKey'] ?? null,
-                'phone' => $notificationData['debitMSISDN'] ?? null,
-                'first_name' => $notificationData['firstName'] ?? null,
-                'last_name' => $notificationData['lastName'] ?? null,
-                'narration' => $notificationData['narration'] ?? null,
-                'transaction_type' => $notificationData['transactionType'] ?? null,
-                'balance' => $notificationData['balance'] ?? null,
+                'customer_reference' => $notificationDataArr['businessKey'] ?? null,
+                'phone' => $notificationDataArr['debitMSISDN'] ?? null,
+                'first_name' => $notificationDataArr['firstName'] ?? null,
+                'last_name' => $notificationDataArr['lastName'] ?? null,
+                'narration' => $notificationDataArr['narration'] ?? null,
+                'transaction_type' => $notificationDataArr['transactionType'] ?? null,
+                'balance' => $notificationDataArr['balance'] ?? null,
             ],
         ];
     }
@@ -237,20 +257,24 @@ class KcbBuniProvider extends BasePaymentProvider
         return $request->has('transactionReference') || $request->has('customerReference');
     }
 
+    /**
+     * @return array{event: string, provider_payment_id: string|null, status: string, amount: int|null, currency: string, metadata: array<string, mixed>}
+     */
     protected function parseV1Ipn(Request $request): array
     {
         $data = $request->all();
 
-        $amount = isset($data['transactionAmount'])
-            ? (int) ((float) $data['transactionAmount'] * 100)
-            : null;
+        $txAmount = $data['transactionAmount'] ?? null;
+        $amount = is_numeric($txAmount) ? (int) ((float) $txAmount * 100) : null;
+
+        $providerPaymentId = $data['transactionReference'] ?? null;
 
         return [
             'event' => 'payment.completed',
-            'provider_payment_id' => $data['transactionReference'] ?? null,
+            'provider_payment_id' => is_string($providerPaymentId) ? $providerPaymentId : null,
             'status' => 'completed',
             'amount' => $amount,
-            'currency' => $data['currency'] ?? 'KES',
+            'currency' => isset($data['currency']) && is_string($data['currency']) ? $data['currency'] : 'KES',
             'metadata' => [
                 'request_id' => $data['requestId'] ?? null,
                 'channel_code' => $data['channelCode'] ?? null,
@@ -276,8 +300,9 @@ class KcbBuniProvider extends BasePaymentProvider
      * the customer reference/bill number is valid. Override the callback
      * to implement your validation logic.
      *
-     * @param  callable(string $customerReference, string $organizationReference): array  $validator
-     *                                                                                                Should return: ['valid' => bool, 'customer_name' => string, 'amount' => int (cents), 'bill_type' => string]
+     * @param  callable(string $customerReference, string $organizationReference): array<string, mixed>  $validator
+     *                                                                                                               Should return: ['valid' => bool, 'customer_name' => string, 'amount' => int (cents), 'bill_type' => string]
+     * @return array<string, mixed>
      */
     public function handleValidation(Request $request, callable $validator): array
     {
@@ -285,19 +310,37 @@ class KcbBuniProvider extends BasePaymentProvider
 
         if ($isV2) {
             $payload = $request->all();
-            $messageId = $payload['header']['messageID'] ?? '';
-            $queryData = $payload['requestPayload']['additionalData']['queryData'] ?? [];
-            $customerReference = $queryData['businessKey'] ?? '';
-            $organizationReference = $payload['requestPayload']['primaryData']['businessKey'] ?? '';
+            $headerRaw = $payload['header'] ?? [];
+            $header = is_array($headerRaw) ? $headerRaw : [];
+            $messageId = is_string($header['messageID'] ?? null) ? $header['messageID'] : '';
+
+            $requestPayload = $payload['requestPayload'] ?? [];
+            $requestPayloadArr = is_array($requestPayload) ? $requestPayload : [];
+            $additionalData = $requestPayloadArr['additionalData'] ?? [];
+            $additionalDataArr = is_array($additionalData) ? $additionalData : [];
+            $queryData = $additionalDataArr['queryData'] ?? [];
+            $queryDataArr = is_array($queryData) ? $queryData : [];
+            $customerReference = is_string($queryDataArr['businessKey'] ?? null) ? $queryDataArr['businessKey'] : '';
+
+            $primary = $requestPayloadArr['primaryData'] ?? [];
+            $primaryArr = is_array($primary) ? $primary : [];
+            $organizationReference = is_string($primaryArr['businessKey'] ?? null) ? $primaryArr['businessKey'] : '';
         } else {
-            $messageId = $request->input('requestId', '');
-            $customerReference = $request->input('customerReference', '');
-            $organizationReference = $request->input('organizationReference', '');
+            $messageIdRaw = $request->input('requestId', '');
+            $messageId = is_string($messageIdRaw) ? $messageIdRaw : '';
+            $customerReferenceRaw = $request->input('customerReference', '');
+            $customerReference = is_string($customerReferenceRaw) ? $customerReferenceRaw : '';
+            $organizationReferenceRaw = $request->input('organizationReference', '');
+            $organizationReference = is_string($organizationReferenceRaw) ? $organizationReferenceRaw : '';
         }
 
         $result = $validator($customerReference, $organizationReference);
-        $valid = $result['valid'] ?? false;
-        $amountWhole = isset($result['amount']) ? number_format($result['amount'] / 100, 2, '.', '') : '';
+        $valid = ($result['valid'] ?? false) === true;
+        $amountValue = $result['amount'] ?? null;
+        $amountWhole = is_numeric($amountValue) ? number_format($amountValue / 100, 2, '.', '') : '';
+
+        $customerName = isset($result['customer_name']) && is_string($result['customer_name']) ? $result['customer_name'] : '';
+        $billType = isset($result['bill_type']) && is_string($result['bill_type']) ? $result['bill_type'] : 'FIXED';
 
         if ($isV2) {
             return [
@@ -309,10 +352,10 @@ class KcbBuniProvider extends BasePaymentProvider
                 'responsePayload' => [
                     'transactionInfo' => [
                         'transactionId' => '',
-                        'customerName' => $result['customer_name'] ?? '',
+                        'customerName' => $customerName,
                         'amount' => $amountWhole,
                         'currency' => 'KES',
-                        'billType' => $result['bill_type'] ?? 'FIXED',
+                        'billType' => $billType,
                     ],
                 ],
             ];
@@ -322,10 +365,10 @@ class KcbBuniProvider extends BasePaymentProvider
             'transactionID' => $messageId,
             'statusCode' => $valid ? '0' : '1',
             'statusMessage' => $valid ? 'Success' : 'Validation failed',
-            'customerName' => $result['customer_name'] ?? '',
+            'customerName' => $customerName,
             'billAmount' => $amountWhole,
             'currency' => 'KES',
-            'billType' => $result['bill_type'] ?? 'FIXED',
+            'billType' => $billType,
             'creditAccountIdentifier' => '',
         ];
     }
@@ -341,7 +384,8 @@ class KcbBuniProvider extends BasePaymentProvider
 
     protected function formatPhone(string $phone): string
     {
-        $phone = preg_replace('/[^0-9]/', '', $phone) ?? $phone;
+        $cleaned = preg_replace('/[^0-9]/', '', $phone);
+        $phone = is_string($cleaned) ? $cleaned : $phone;
 
         if (str_starts_with($phone, '0')) {
             $phone = '254'.substr($phone, 1);

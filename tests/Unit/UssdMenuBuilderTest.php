@@ -25,8 +25,8 @@ class UssdMenuBuilderTest extends BaseTestCase
     {
         parent::setUp();
 
-        $this->sessionManager = $this->app->make(UssdSessionManager::class);
-        $this->builder = $this->app->make(UssdMenuBuilder::class);
+        $this->sessionManager = $this->app()->make(UssdSessionManager::class);
+        $this->builder = $this->app()->make(UssdMenuBuilder::class);
     }
 
     #[\Override]
@@ -34,8 +34,10 @@ class UssdMenuBuilderTest extends BaseTestCase
     {
         parent::defineEnvironment($app);
 
-        $app['config']->set('billing.ussd.enabled', true);
-        $app['config']->set('billing.ussd.phone_field', 'phone');
+        $config = $app->make('config');
+
+        $config->set('billing.ussd.enabled', true);
+        $config->set('billing.ussd.phone_field', 'phone');
     }
 
     // ─── Format Money ───────────────────────────────────────────────────
@@ -333,7 +335,9 @@ class UssdMenuBuilderTest extends BaseTestCase
 
         // Verify subscription was updated
         $company->refresh();
-        $this->assertEquals($newPlan->id, $company->subscription()->plan_id);
+        $companySubscription = $company->subscription();
+        $this->assertNotNull($companySubscription);
+        $this->assertEquals($newPlan->id, $companySubscription->plan_id);
     }
 
     // ─── Invalid Option ─────────────────────────────────────────────────

@@ -38,29 +38,32 @@ class NcbaProvider extends BasePaymentProvider
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
     {
-        $reference = $options['reference'] ?? 'PAY-'.uniqid();
-        $transferType = $options['transfer_type'] ?? 'pesalink'; // pesalink, internal
+        $reference = $this->optionString($options, 'reference', 'PAY-'.uniqid());
+        $transferType = $this->optionString($options, 'transfer_type', 'pesalink'); // pesalink, internal
 
         $payload = [
             'reference' => $reference,
             'amount' => number_format($amount / 100, 2, '.', ''),
-            'currency' => $currency ?: 'KES',
-            'description' => $options['description'] ?? 'Payment',
-            'destination_account' => $options['destination_account'] ?? '',
+            'currency' => $currency !== '' ? $currency : 'KES',
+            'description' => $this->optionString($options, 'description', 'Payment'),
+            'destination_account' => $this->optionString($options, 'destination_account'),
             'transfer_type' => $transferType,
-            'callback_url' => $options['callback_url'] ?? $this->callbackUrl,
+            'callback_url' => $this->optionString($options, 'callback_url', $this->callbackUrl),
         ];
 
-        if (isset($options['bank_code'])) {
-            $payload['bank_code'] = $options['bank_code'];
+        $bankCode = $this->optionNullableString($options, 'bank_code');
+        if ($bankCode !== null) {
+            $payload['bank_code'] = $bankCode;
         }
 
-        if (isset($options['phone'])) {
-            $payload['phone'] = $this->formatPhone($options['phone']);
+        $phone = $this->optionNullableString($options, 'phone');
+        if ($phone !== null) {
+            $payload['phone'] = $this->formatPhone($phone);
         }
 
-        if (isset($options['recipient_name'])) {
-            $payload['recipient_name'] = $options['recipient_name'];
+        $recipientName = $this->optionNullableString($options, 'recipient_name');
+        if ($recipientName !== null) {
+            $payload['recipient_name'] = $recipientName;
         }
 
         $this->logRequest('POST', $this->baseUrl.'/payments/transfer', $payload);
@@ -70,14 +73,14 @@ class NcbaProvider extends BasePaymentProvider
             'X-Api-Secret' => $this->apiSecret,
         ])->post($this->baseUrl.'/payments/transfer', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         $success = ($data['status'] ?? '') === 'success' || ($data['response_code'] ?? '') === '00';
 
         return [
             'success' => $success,
-            'provider_payment_id' => $data['transaction_id'] ?? null,
-            'provider_reference' => $data['reference'] ?? $reference,
+            'provider_payment_id' => isset($data['transaction_id']) && is_string($data['transaction_id']) ? $data['transaction_id'] : null,
+            'provider_reference' => isset($data['reference']) && is_string($data['reference']) ? $data['reference'] : $reference,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -89,9 +92,9 @@ class NcbaProvider extends BasePaymentProvider
         $payload = [
             'transaction_id' => $providerPaymentId,
             'amount' => $amount !== null ? number_format($amount / 100, 2, '.', '') : null,
-            'reason' => $options['reason'] ?? 'Refund',
-            'destination_account' => $options['destination_account'] ?? '',
-            'callback_url' => $options['callback_url'] ?? $this->callbackUrl,
+            'reason' => $this->optionString($options, 'reason', 'Refund'),
+            'destination_account' => $this->optionString($options, 'destination_account'),
+            'callback_url' => $this->optionString($options, 'callback_url', $this->callbackUrl),
         ];
 
         $this->logRequest('POST', $this->baseUrl.'/payments/refund', $payload);
@@ -101,13 +104,15 @@ class NcbaProvider extends BasePaymentProvider
             'X-Api-Secret' => $this->apiSecret,
         ])->post($this->baseUrl.'/payments/refund', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         $success = ($data['status'] ?? '') === 'success' || ($data['response_code'] ?? '') === '00';
 
+        $providerRefundId = $data['refund_id'] ?? $data['transaction_id'] ?? null;
+
         return [
             'success' => $success,
-            'provider_refund_id' => $data['refund_id'] ?? $data['transaction_id'] ?? null,
+            'provider_refund_id' => is_string($providerRefundId) ? $providerRefundId : null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -121,7 +126,7 @@ class NcbaProvider extends BasePaymentProvider
             'X-Api-Secret' => $this->apiSecret,
         ])->get($this->baseUrl.'/payments/status/'.$providerPaymentId);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
         $status = $data['transaction_status'] ?? $data['status'] ?? null;
 
         return match ($status) {
@@ -136,9 +141,9 @@ class NcbaProvider extends BasePaymentProvider
     public function verifyWebhook(Request $request): bool
     {
         // NCBA IPN Push - verify via signature if available, else structure check
-        $signature = $request->header('X-NCBA-Signature', '');
+        $signature = (string) $request->header('X-NCBA-Signature', '');
 
-        if (! empty($signature) && ! empty($this->apiSecret)) {
+        if ($signature !== '' && $this->apiSecret !== '') {
             $payload = $request->getContent();
             $expected = hash_hmac('sha256', $payload, $this->apiSecret);
 
@@ -159,18 +164,20 @@ class NcbaProvider extends BasePaymentProvider
         $success = in_array($status, ['completed', 'success', '00'], true);
 
         $amount = null;
-        if (isset($data['amount'])) {
+        if (isset($data['amount']) && is_numeric($data['amount'])) {
             $amount = (int) ((float) $data['amount'] * 100);
-        } elseif (isset($data['transactionAmount'])) {
+        } elseif (isset($data['transactionAmount']) && is_numeric($data['transactionAmount'])) {
             $amount = (int) ((float) $data['transactionAmount'] * 100);
         }
 
+        $providerPaymentId = $data['transaction_id'] ?? $data['transactionId'] ?? null;
+
         return [
             'event' => $success ? 'payment.completed' : 'payment.failed',
-            'provider_payment_id' => $data['transaction_id'] ?? $data['transactionId'] ?? null,
+            'provider_payment_id' => is_string($providerPaymentId) ? $providerPaymentId : null,
             'status' => $success ? 'completed' : 'failed',
             'amount' => $amount,
-            'currency' => $data['currency'] ?? 'KES',
+            'currency' => isset($data['currency']) && is_string($data['currency']) ? $data['currency'] : 'KES',
             'metadata' => [
                 'reference' => $data['reference'] ?? null,
                 'phone' => $data['phone'] ?? $data['msisdn'] ?? null,
@@ -184,7 +191,7 @@ class NcbaProvider extends BasePaymentProvider
     #[\Override]
     public function isConfigured(): bool
     {
-        return ! empty($this->apiKey);
+        return $this->apiKey !== '';
     }
 
     #[\Override]
@@ -204,7 +211,8 @@ class NcbaProvider extends BasePaymentProvider
 
     protected function formatPhone(string $phone): string
     {
-        $phone = preg_replace('/[^0-9]/', '', $phone) ?? $phone;
+        $cleaned = preg_replace('/[^0-9]/', '', $phone);
+        $phone = is_string($cleaned) ? $cleaned : $phone;
 
         if (str_starts_with($phone, '0')) {
             $phone = '254'.substr($phone, 1);

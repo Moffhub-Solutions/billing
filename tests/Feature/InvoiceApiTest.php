@@ -124,11 +124,13 @@ class InvoiceApiTest extends BaseTestCase
         $this->assertEquals(522000, $response->json('data.total'));
 
         // Verify items
-        $this->assertCount(2, $response->json('data.items'));
+        $items = $response->json('data.items');
+        $this->assertIsArray($items);
+        $this->assertCount(2, $items);
 
         // Verify database
-        $this->assertDatabaseCount(config('billing.tables.invoices', 'billing_invoices'), 1);
-        $this->assertDatabaseCount(config('billing.tables.invoice_items', 'billing_invoice_items'), 2);
+        $this->assertDatabaseCount(billing_table('invoices', 'billing_invoices'), 1);
+        $this->assertDatabaseCount(billing_table('invoice_items', 'billing_invoice_items'), 2);
     }
 
     public function test_create_invoice_tax_calculation_at_16_percent(): void
@@ -226,7 +228,7 @@ class InvoiceApiTest extends BaseTestCase
             ->assertJsonPath('message', 'Invoice marked as sent.')
             ->assertJsonPath('data.status', 'sent');
 
-        $this->assertDatabaseHas(config('billing.tables.invoices', 'billing_invoices'), [
+        $this->assertDatabaseHas(billing_table('invoices', 'billing_invoices'), [
             'id' => $invoice->id,
             'status' => 'sent',
         ]);
@@ -282,7 +284,7 @@ class InvoiceApiTest extends BaseTestCase
             ->assertJsonPath('message', 'Invoice marked as paid.')
             ->assertJsonPath('data.status', 'paid');
 
-        $this->assertDatabaseHas(config('billing.tables.invoices', 'billing_invoices'), [
+        $this->assertDatabaseHas(billing_table('invoices', 'billing_invoices'), [
             'id' => $invoice->id,
             'status' => 'paid',
         ]);
@@ -317,8 +319,12 @@ class InvoiceApiTest extends BaseTestCase
 
         // Verify the metadata includes the manual payment info
         $freshInvoice = Invoice::find($invoice->id);
-        $this->assertEquals('CHK-12345', $freshInvoice->metadata['manual_payment']['reference']);
-        $this->assertEquals('Paid by cheque', $freshInvoice->metadata['manual_payment']['notes']);
+        $this->assertNotNull($freshInvoice);
+        $metadata = $freshInvoice->metadata ?? [];
+        $manualPayment = $metadata['manual_payment'] ?? null;
+        $this->assertIsArray($manualPayment);
+        $this->assertEquals('CHK-12345', $manualPayment['reference'] ?? null);
+        $this->assertEquals('Paid by cheque', $manualPayment['notes'] ?? null);
     }
 
     public function test_mark_paid_creates_payment_record(): void
@@ -335,7 +341,7 @@ class InvoiceApiTest extends BaseTestCase
             'payment_reference' => 'REF-001',
         ]);
 
-        $this->assertDatabaseHas(config('billing.tables.payments', 'billing_payments'), [
+        $this->assertDatabaseHas(billing_table('payments', 'billing_payments'), [
             'invoice_id' => $invoice->id,
             'amount' => 75000,
             'currency' => 'KES',
@@ -384,6 +390,9 @@ class InvoiceApiTest extends BaseTestCase
 
     // ─── Helpers ────────────────────────────────────────────────────────
 
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
     protected function createInvoice(array $attributes = []): Invoice
     {
         return Invoice::create(array_merge([

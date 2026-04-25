@@ -22,32 +22,32 @@ class ServiceProviderTest extends BaseTestCase
 {
     public function test_registers_billing_service(): void
     {
-        $service = $this->app->make(BillingService::class);
+        $service = $this->app()->make(BillingService::class);
 
         $this->assertInstanceOf(BillingService::class, $service);
     }
 
     public function test_registers_payment_manager(): void
     {
-        $manager = $this->app->make(PaymentManager::class);
+        $manager = $this->app()->make(PaymentManager::class);
 
         $this->assertInstanceOf(PaymentManager::class, $manager);
     }
 
     public function test_registers_feature_resolver(): void
     {
-        $resolver = $this->app->make(FeatureResolverInterface::class);
+        $resolver = $this->app()->make(FeatureResolverInterface::class);
 
         $this->assertInstanceOf(FeatureResolver::class, $resolver);
 
         // Also test the concrete binding
-        $concrete = $this->app->make(FeatureResolver::class);
+        $concrete = $this->app()->make(FeatureResolver::class);
         $this->assertInstanceOf(FeatureResolver::class, $concrete);
     }
 
     public function test_registers_usage_service(): void
     {
-        $service = $this->app->make(UsageService::class);
+        $service = $this->app()->make(UsageService::class);
 
         $this->assertInstanceOf(UsageService::class, $service);
     }
@@ -68,7 +68,7 @@ class ServiceProviderTest extends BaseTestCase
 
     public function test_registers_middleware_aliases(): void
     {
-        $router = $this->app->make(Router::class);
+        $router = $this->app()->make(Router::class);
         $aliases = $router->getMiddleware();
 
         $this->assertSame(RequireSubscription::class, $aliases['subscribed'] ?? null);
@@ -83,7 +83,7 @@ class ServiceProviderTest extends BaseTestCase
         // would, then assert FK targets land before the tables that
         // reference them. Catches future regressions where someone adds a
         // migration without updating MIGRATION_ORDER.
-        $provider = new class($this->app) extends BillingServiceProvider
+        $provider = new class($this->app()) extends BillingServiceProvider
         {
             /**
              * @return array<string, string>
@@ -96,7 +96,12 @@ class ServiceProviderTest extends BaseTestCase
 
                 foreach (glob($from.DIRECTORY_SEPARATOR.'*.php') ?: [] as $file) {
                     $name = preg_replace('/^\d{4}_\d{2}_\d{2}_\d{6}_create_billing_/', '', basename($file, '.php'));
-                    $name = preg_replace('/_table$/', '', $name);
+                    $name = preg_replace('/_table$/', '', (string) $name);
+
+                    if ($name === null) {
+                        continue;
+                    }
+
                     $available[$name] = $file;
                 }
 

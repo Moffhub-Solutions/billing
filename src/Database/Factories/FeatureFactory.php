@@ -17,9 +17,13 @@ class FeatureFactory extends Factory
 {
     protected $model = Feature::class;
 
+    /**
+     * @return array<string, mixed>
+     */
     public function definition(): array
     {
-        $name = fake()->unique()->words(2, true);
+        $nameValue = fake()->unique()->words(2, true);
+        $name = is_string($nameValue) ? $nameValue : 'feature';
 
         return [
             'name' => ucwords($name),

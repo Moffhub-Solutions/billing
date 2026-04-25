@@ -15,11 +15,17 @@ class UsageRecordFactory extends Factory
 {
     protected $model = UsageRecord::class;
 
+    /**
+     * @return array<string, mixed>
+     */
     public function definition(): array
     {
+        $billableModelRaw = config('billing.billable_model', 'App\\Models\\Company');
+        $billableModel = is_string($billableModelRaw) ? $billableModelRaw : 'App\\Models\\Company';
+
         return [
             'ulid' => Str::ulid()->toBase32(),
-            'billable_type' => config('billing.billable_model', 'App\\Models\\Company'),
+            'billable_type' => $billableModel,
             'billable_id' => 1,
             'feature_slug' => fake()->slug(2),
             'period_start' => now()->startOfMonth(),
@@ -45,9 +51,14 @@ class UsageRecordFactory extends Factory
 
     public function overLimit(): static
     {
-        return $this->state(fn (array $attributes) => [
-            'usage_count' => ($attributes['usage_limit'] ?? 100) + 10,
-            'overage_count' => 10,
-        ]);
+        return $this->state(function (array $attributes): array {
+            $limit = $attributes['usage_limit'] ?? 100;
+            $limitInt = is_numeric($limit) ? (int) $limit : 100;
+
+            return [
+                'usage_count' => $limitInt + 10,
+                'overage_count' => 10,
+            ];
+        });
     }
 }

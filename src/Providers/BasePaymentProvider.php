@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Providers;
 
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
@@ -49,12 +50,16 @@ abstract class BasePaymentProvider implements PaymentProviderInterface
 
     /**
      * Log a provider request (with credential scrubbing).
+     *
+     * @param  array<string, mixed>  $payload
      */
     protected function logRequest(string $method, string $url, array $payload = []): void
     {
         $scrubbed = $this->scrubSensitiveData($payload);
 
-        Log::channel(config('billing.log_channel', 'stack'))->debug("Billing [{$this->getName()}] {$method} {$url}", [
+        $channel = config('billing.log_channel', 'stack');
+
+        Log::channel(is_string($channel) ? $channel : 'stack')->debug("Billing [{$this->getName()}] {$method} {$url}", [
             'provider' => $this->getName(),
             'payload' => $scrubbed,
         ]);
@@ -62,6 +67,9 @@ abstract class BasePaymentProvider implements PaymentProviderInterface
 
     /**
      * Recursively scrub sensitive keys from data.
+     *
+     * @param  array<array-key, mixed>  $data
+     * @return array<array-key, mixed>
      */
     protected function scrubSensitiveData(array $data): array
     {
@@ -76,5 +84,156 @@ abstract class BasePaymentProvider implements PaymentProviderInterface
         }
 
         return $data;
+    }
+
+    /**
+     * Read a string option from the options array, or return $default.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    protected function optionString(array $options, string $key, string $default = ''): string
+    {
+        $value = $options[$key] ?? null;
+
+        return is_string($value) ? $value : $default;
+    }
+
+    /**
+     * Read a nullable string option from the options array.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    protected function optionNullableString(array $options, string $key): ?string
+    {
+        $value = $options[$key] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * Read an array option from the options array.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array<array-key, mixed>
+     */
+    protected function optionArray(array $options, string $key): array
+    {
+        $value = $options[$key] ?? null;
+
+        return is_array($value) ? $value : [];
+    }
+
+    /**
+     * Read an int option from the options array.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    protected function optionInt(array $options, string $key, int $default = 0): int
+    {
+        $value = $options[$key] ?? null;
+
+        if (is_int($value)) {
+            return $value;
+        }
+
+        return is_numeric($value) ? (int) $value : $default;
+    }
+
+    /**
+     * Convert mixed to a string or null (no coercion of non-strings).
+     */
+    protected function asNullableString(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * Convert mixed to a string with a default.
+     */
+    protected function asString(mixed $value, string $default = ''): string
+    {
+        return is_string($value) ? $value : $default;
+    }
+
+    /**
+     * Convert mixed to an int or null.
+     */
+    protected function asNullableInt(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    /**
+     * Convert mixed to an array.
+     *
+     * @return array<array-key, mixed>
+     */
+    protected function asArray(mixed $value): array
+    {
+        return is_array($value) ? $value : [];
+    }
+
+    /**
+     * Read a string value at a dot path on a JSON response.
+     */
+    protected function jsonString(Response $response, string $path, string $default = ''): string
+    {
+        $value = $response->json($path);
+
+        return is_string($value) ? $value : $default;
+    }
+
+    /**
+     * Read a nullable string value at a dot path on a JSON response.
+     */
+    protected function jsonNullableString(Response $response, string $path): ?string
+    {
+        $value = $response->json($path);
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * Read an int value at a dot path on a JSON response.
+     */
+    protected function jsonInt(Response $response, string $path, int $default = 0): int
+    {
+        $value = $response->json($path);
+
+        if (is_int($value)) {
+            return $value;
+        }
+
+        return is_numeric($value) ? (int) $value : $default;
+    }
+
+    /**
+     * Read a nullable int value at a dot path on a JSON response.
+     */
+    protected function jsonNullableInt(Response $response, string $path): ?int
+    {
+        $value = $response->json($path);
+
+        if (is_int($value)) {
+            return $value;
+        }
+
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    /**
+     * Read an array value at a dot path on a JSON response.
+     *
+     * @return array<array-key, mixed>
+     */
+    protected function jsonArray(Response $response, string $path): array
+    {
+        $value = $response->json($path);
+
+        return is_array($value) ? $value : [];
     }
 }

@@ -18,6 +18,8 @@ interface TaxCalculatorInterface
 
     /**
      * Check if an item is tax-exempt.
+     *
+     * @param  array<string, mixed>  $context
      */
     public function isExempt(array $context = []): bool;
 }

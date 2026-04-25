@@ -47,7 +47,7 @@ class JengaProvider extends BasePaymentProvider
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
     {
-        $reference = $options['reference'] ?? 'PAY-'.uniqid();
+        $reference = $this->optionString($options, 'reference', 'PAY-'.uniqid());
         $token = $this->getAccessToken();
         $amountWhole = number_format($amount / 100, 2, '.', '');
 
@@ -58,24 +58,26 @@ class JengaProvider extends BasePaymentProvider
             ],
             'payment' => [
                 'amount' => $amountWhole,
-                'currency' => $currency ?: 'KES',
-                'description' => $options['description'] ?? 'Payment',
-                'type' => $options['payment_type'] ?? 'mobile_money',
+                'currency' => $currency !== '' ? $currency : 'KES',
+                'description' => $this->optionString($options, 'description', 'Payment'),
+                'type' => $this->optionString($options, 'payment_type', 'mobile_money'),
             ],
             'customer' => [
-                'name' => $options['name'] ?? '',
-                'email' => $options['email'] ?? '',
+                'name' => $this->optionString($options, 'name'),
+                'email' => $this->optionString($options, 'email'),
             ],
-            'callback_url' => $options['callback_url'] ?? $this->callbackUrl,
+            'callback_url' => $this->optionString($options, 'callback_url', $this->callbackUrl),
         ];
 
-        if (isset($options['phone'])) {
-            $payload['customer']['phone'] = $this->formatPhone($options['phone']);
+        $phone = $this->optionNullableString($options, 'phone');
+        if ($phone !== null) {
+            $payload['customer']['phone'] = $this->formatPhone($phone);
         }
 
-        if (isset($options['account_number'])) {
-            $payload['payment']['account_number'] = $options['account_number'];
-            $payload['payment']['bank_code'] = $options['bank_code'] ?? '';
+        $accountNumber = $this->optionNullableString($options, 'account_number');
+        if ($accountNumber !== null) {
+            $payload['payment']['account_number'] = $accountNumber;
+            $payload['payment']['bank_code'] = $this->optionString($options, 'bank_code');
         }
 
         // Sign the request
@@ -90,14 +92,14 @@ class JengaProvider extends BasePaymentProvider
             ])
             ->post($this->baseUrl.'/v3-apis/transaction-api/v3.0/remittance', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         $success = ($data['status'] ?? false) === true || ($data['code'] ?? '') === '0';
 
         return [
             'success' => $success,
-            'provider_payment_id' => $data['transactionId'] ?? null,
-            'provider_reference' => $data['reference'] ?? $reference,
+            'provider_payment_id' => isset($data['transactionId']) && is_string($data['transactionId']) ? $data['transactionId'] : null,
+            'provider_reference' => isset($data['reference']) && is_string($data['reference']) ? $data['reference'] : $reference,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -106,28 +108,28 @@ class JengaProvider extends BasePaymentProvider
     #[\Override]
     public function refund(string $providerPaymentId, ?int $amount = null, array $options = []): array
     {
-        $phone = $options['phone'] ?? null;
-        $reference = $options['reference'] ?? 'REF-'.uniqid();
+        $phone = $this->optionNullableString($options, 'phone');
+        $reference = $this->optionString($options, 'reference', 'REF-'.uniqid());
         $token = $this->getAccessToken();
         $amountWhole = $amount !== null ? number_format($amount / 100, 2, '.', '') : '0.00';
 
         $payload = [
             'source' => [
                 'countryCode' => 'KE',
-                'name' => $options['source_name'] ?? $this->merchantCode,
-                'accountNumber' => $options['source_account'] ?? '',
+                'name' => $this->optionString($options, 'source_name', $this->merchantCode),
+                'accountNumber' => $this->optionString($options, 'source_account'),
             ],
             'destination' => [
                 'type' => $phone !== null ? 'mobile' : 'bank',
                 'countryCode' => 'KE',
-                'name' => $options['recipient_name'] ?? '',
+                'name' => $this->optionString($options, 'recipient_name'),
             ],
             'transfer' => [
                 'type' => 'InternalFundsTransfer',
                 'amount' => $amountWhole,
                 'currencyCode' => 'KES',
                 'reference' => $reference,
-                'description' => $options['description'] ?? "Refund for {$providerPaymentId}",
+                'description' => $this->optionString($options, 'description', "Refund for {$providerPaymentId}"),
             ],
         ];
 
@@ -144,13 +146,13 @@ class JengaProvider extends BasePaymentProvider
             ->withHeaders(['signature' => $signature])
             ->post($this->baseUrl.'/v3-apis/transaction-api/v3.0/remittance', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         $success = ($data['status'] ?? false) === true || ($data['code'] ?? '') === '0';
 
         return [
             'success' => $success,
-            'provider_refund_id' => $data['transactionId'] ?? null,
+            'provider_refund_id' => isset($data['transactionId']) && is_string($data['transactionId']) ? $data['transactionId'] : null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -164,7 +166,7 @@ class JengaProvider extends BasePaymentProvider
         $response = Http::withToken($token)
             ->get($this->baseUrl.'/v3-apis/transaction-api/v3.0/payments/'.$providerPaymentId);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
         $status = $data['status'] ?? null;
 
         return match ($status) {
@@ -178,18 +180,30 @@ class JengaProvider extends BasePaymentProvider
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        $signature = $request->header('X-Jenga-Signature', '');
+        $signature = (string) $request->header('X-Jenga-Signature', '');
 
         // If signature header is present and we have a key, verify cryptographically
-        if (! empty($signature) && $this->privateKeyPath !== null && file_exists($this->privateKeyPath)) {
+        if ($signature !== '' && $this->privateKeyPath !== null && file_exists($this->privateKeyPath)) {
             $payload = $request->getContent();
-            $publicKey = openssl_pkey_get_public(file_get_contents($this->privateKeyPath));
+            $keyContent = file_get_contents($this->privateKeyPath);
+
+            if (! is_string($keyContent)) {
+                return false;
+            }
+
+            $publicKey = openssl_pkey_get_public($keyContent);
 
             if ($publicKey === false) {
                 return false;
             }
 
-            return openssl_verify($payload, base64_decode($signature), $publicKey, OPENSSL_ALGO_SHA256) === 1;
+            $decoded = base64_decode($signature, true);
+
+            if ($decoded === false) {
+                return false;
+            }
+
+            return openssl_verify($payload, $decoded, $publicKey, OPENSSL_ALGO_SHA256) === 1;
         }
 
         // Fall back to structure verification — check for expected Jenga payload fields
@@ -204,14 +218,18 @@ class JengaProvider extends BasePaymentProvider
         $status = $data['status'] ?? $data['transaction_status'] ?? null;
 
         $success = $status === 'completed' || $status === 'success' || $status === true;
-        $amount = isset($data['amount']) ? (int) ((float) $data['amount'] * 100) : null;
+        $amountValue = $data['amount'] ?? null;
+        $amount = is_numeric($amountValue) ? (int) ((float) $amountValue * 100) : null;
+
+        $providerPaymentId = $data['transactionId'] ?? $data['transaction_id'] ?? null;
+        $currency = $data['currency'] ?? $data['currencyCode'] ?? 'KES';
 
         return [
             'event' => $success ? 'payment.completed' : 'payment.failed',
-            'provider_payment_id' => $data['transactionId'] ?? $data['transaction_id'] ?? null,
+            'provider_payment_id' => is_string($providerPaymentId) ? $providerPaymentId : null,
             'status' => $success ? 'completed' : 'failed',
             'amount' => $amount,
-            'currency' => $data['currency'] ?? $data['currencyCode'] ?? 'KES',
+            'currency' => is_string($currency) ? $currency : 'KES',
             'metadata' => [
                 'reference' => $data['reference'] ?? null,
                 'description' => $data['description'] ?? null,
@@ -224,7 +242,7 @@ class JengaProvider extends BasePaymentProvider
     #[\Override]
     public function isConfigured(): bool
     {
-        return ! empty($this->apiKey) && ! empty($this->consumerSecret);
+        return $this->apiKey !== '' && $this->consumerSecret !== '';
     }
 
     #[\Override]
@@ -239,7 +257,7 @@ class JengaProvider extends BasePaymentProvider
     {
         $cacheKey = 'billing:jenga:access_token:'.$this->merchantCode;
 
-        return Cache::remember($cacheKey, 3300, function (): string {
+        $token = Cache::remember($cacheKey, 3300, function (): string {
             $credentials = base64_encode($this->apiKey.':'.$this->consumerSecret);
 
             $response = Http::withHeaders([
@@ -249,8 +267,12 @@ class JengaProvider extends BasePaymentProvider
                 'consumerSecret' => $this->consumerSecret,
             ]);
 
-            return $response->json('accessToken') ?? $response->json('access_token') ?? '';
+            $accessToken = $response->json('accessToken') ?? $response->json('access_token');
+
+            return is_string($accessToken) ? $accessToken : '';
         });
+
+        return $token;
     }
 
     // ─── Request Signing ───────────────────────────────────────────────
@@ -261,7 +283,13 @@ class JengaProvider extends BasePaymentProvider
             return '';
         }
 
-        $privateKey = openssl_pkey_get_private(file_get_contents($this->privateKeyPath));
+        $keyContent = file_get_contents($this->privateKeyPath);
+
+        if (! is_string($keyContent)) {
+            return '';
+        }
+
+        $privateKey = openssl_pkey_get_private($keyContent);
 
         if ($privateKey === false) {
             return '';
@@ -284,7 +312,8 @@ class JengaProvider extends BasePaymentProvider
 
     protected function formatPhone(string $phone): string
     {
-        $phone = preg_replace('/[^0-9]/', '', $phone) ?? $phone;
+        $cleaned = preg_replace('/[^0-9]/', '', $phone);
+        $phone = is_string($cleaned) ? $cleaned : $phone;
 
         if (str_starts_with($phone, '0')) {
             $phone = '254'.substr($phone, 1);

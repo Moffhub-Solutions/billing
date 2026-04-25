@@ -8,8 +8,27 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 use Moffhub\Billing\Database\Factories\UsageRecordFactory;
 
+/**
+ * @property int $id
+ * @property string $billable_type
+ * @property int $billable_id
+ * @property string|null $ulid
+ * @property string $feature_slug
+ * @property Carbon $period_start
+ * @property Carbon $period_end
+ * @property int $usage_count
+ * @property int|null $usage_limit
+ * @property int $overage_count
+ * @property array<string, mixed>|null $metadata
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
+ * @property-read Model $billable
+ *
+ * @method static Builder<self> currentPeriod()
+ */
 class UsageRecord extends Model
 {
     /** @use HasFactory<UsageRecordFactory> */
@@ -38,9 +57,14 @@ class UsageRecord extends Model
     #[\Override]
     public function getTable(): string
     {
-        return config('billing.tables.usage_records', 'billing_usage_records');
+        $value = config('billing.tables.usage_records', 'billing_usage_records');
+
+        return is_string($value) ? $value : 'billing_usage_records';
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function billable(): MorphTo
     {
         return $this->morphTo();

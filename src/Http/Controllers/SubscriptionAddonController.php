@@ -39,21 +39,23 @@ class SubscriptionAddonController extends Controller
             'feature' => ['required', 'string'],
         ]);
 
-        $subscription = Subscription::findOrFail($subscription);
+        $featureSlug = $request->string('feature')->toString();
 
-        $feature = Feature::where('slug', $request->input('feature'))
+        $subscriptionModel = Subscription::query()->findOrFail($subscription);
+
+        $feature = Feature::query()->where('slug', $featureSlug)
             ->where('is_addon', true)
             ->where('is_active', true)
             ->first();
 
         if ($feature === null) {
             return response()->json([
-                'message' => "Feature '{$request->input('feature')}' is not available as an add-on.",
+                'message' => "Feature '{$featureSlug}' is not available as an add-on.",
             ], 422);
         }
 
         // Check if already added
-        $existing = $subscription->addons()
+        $existing = $subscriptionModel->addons()
             ->where('feature_id', $feature->id)
             ->where('status', 'active')
             ->first();
@@ -64,7 +66,7 @@ class SubscriptionAddonController extends Controller
             ], 422);
         }
 
-        $addon = $subscription->addons()->create([
+        $addon = $subscriptionModel->addons()->create([
             'feature_id' => $feature->id,
             'status' => 'active',
             'price_override' => $request->input('price_override'),
@@ -74,7 +76,7 @@ class SubscriptionAddonController extends Controller
         $addon->load('feature');
 
         // Clear feature cache
-        app(FeatureResolver::class)->clearCache($subscription->billable);
+        app(FeatureResolver::class)->clearCache($subscriptionModel->billable);
 
         return response()->json([
             'message' => "Add-on '{$feature->name}' enabled.",
@@ -87,17 +89,17 @@ class SubscriptionAddonController extends Controller
      */
     public function destroy(int $subscription, int $addon): JsonResponse
     {
-        $subscription = Subscription::findOrFail($subscription);
+        $subscriptionModel = Subscription::query()->findOrFail($subscription);
 
-        $addon = $subscription->addons()->findOrFail($addon);
+        $addonModel = $subscriptionModel->addons()->findOrFail($addon);
 
-        $addon->update([
+        $addonModel->update([
             'status' => 'cancelled',
             'disabled_at' => now(),
         ]);
 
         // Clear feature cache
-        app(FeatureResolver::class)->clearCache($subscription->billable);
+        app(FeatureResolver::class)->clearCache($subscriptionModel->billable);
 
         return response()->json([
             'message' => 'Add-on removed.',

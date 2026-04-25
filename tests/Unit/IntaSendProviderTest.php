@@ -97,7 +97,9 @@ class IntaSendProviderTest extends BaseTestCase
 
         $this->assertFalse($result['success']);
         $this->assertEquals('failed', $result['status']);
-        $this->assertStringContainsString('Phone number is required', $result['metadata']['error']);
+        $error = $result['metadata']['error'] ?? null;
+        $this->assertIsString($error);
+        $this->assertStringContainsString('Phone number is required', $error);
     }
 
     public function test_stk_push_success(): void
@@ -220,6 +222,7 @@ class IntaSendProviderTest extends BaseTestCase
     public function test_verify_webhook_with_signature(): void
     {
         $payload = json_encode(['invoice_id' => 'INV-001']);
+        $this->assertIsString($payload);
         $signature = hash_hmac('sha256', $payload, 'ISSecretKey_test_12345');
 
         $request = Request::create('/webhook', 'POST', [], [], [], [
@@ -232,6 +235,7 @@ class IntaSendProviderTest extends BaseTestCase
     public function test_verify_webhook_invalid_signature(): void
     {
         $payload = json_encode(['invoice_id' => 'INV-001']);
+        $this->assertIsString($payload);
 
         $request = Request::create('/webhook', 'POST', [], [], [], [
             'HTTP_X_INTASEND_SIGNATURE' => 'invalid',

@@ -16,6 +16,7 @@ class UsageService
      * Record a usage event for a billable.
      *
      * @param  string|null  $transactionId  Unique ID for deduplication
+     * @param  array<string, mixed>  $properties
      */
     public function record(
         Model $billable,
@@ -64,8 +65,11 @@ class UsageService
             ? $billable->subscription()
             : null;
 
-        $periodStart = $subscription?->current_period_start ?? now()->startOfMonth();
-        $periodEnd = $subscription?->current_period_end ?? now()->endOfMonth();
+        $periodStart = $subscription !== null ? $subscription->current_period_start : null;
+        $periodStart ??= now()->startOfMonth();
+
+        $periodEnd = $subscription !== null ? $subscription->current_period_end : null;
+        $periodEnd ??= now()->endOfMonth();
 
         // Resolve the usage limit from the plan
         $limit = null;
@@ -96,11 +100,13 @@ class UsageService
      */
     public function getUsage(Model $billable, string $featureSlug): int
     {
-        return $billable->morphMany(UsageRecord::class, 'billable')
+        $value = $billable->morphMany(UsageRecord::class, 'billable')
             ->where('feature_slug', $featureSlug)
             ->where('period_start', '<=', now())
             ->where('period_end', '>=', now())
-            ->value('usage_count') ?? 0;
+            ->value('usage_count');
+
+        return is_int($value) ? $value : 0;
     }
 
     /**
@@ -157,9 +163,13 @@ class UsageService
         }
 
         $percentage = ($record->usage_count / $record->usage_limit) * 100;
-        $thresholds = config('billing.usage.alert_thresholds', [80, 90, 100]);
+        $thresholdsRaw = config('billing.usage.alert_thresholds', [80, 90, 100]);
+        $thresholds = is_array($thresholdsRaw) ? $thresholdsRaw : [80, 90, 100];
 
         foreach ($thresholds as $threshold) {
+            if (! is_numeric($threshold)) {
+                continue;
+            }
             $previousCount = $record->usage_count - 1;
             $previousPercentage = ($previousCount / $record->usage_limit) * 100;
 

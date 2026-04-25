@@ -63,7 +63,7 @@ class MpesaProvider extends BasePaymentProvider
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
     {
-        $phone = $options['phone'] ?? null;
+        $phone = $this->optionNullableString($options, 'phone');
 
         if ($phone === null) {
             return [
@@ -78,16 +78,16 @@ class MpesaProvider extends BasePaymentProvider
         return $this->stkPush(
             phone: $this->formatPhone($phone),
             amount: (int) ceil($amount / 100), // convert cents to whole KES
-            accountReference: $options['account_reference'] ?? 'Payment',
-            transactionDesc: $options['description'] ?? 'Payment',
-            callbackUrl: $options['callback_url'] ?? $this->callbackUrl,
+            accountReference: $this->optionString($options, 'account_reference', 'Payment'),
+            transactionDesc: $this->optionString($options, 'description', 'Payment'),
+            callbackUrl: $this->optionString($options, 'callback_url', $this->callbackUrl),
         );
     }
 
     #[\Override]
     public function refund(string $providerPaymentId, ?int $amount = null, array $options = []): array
     {
-        $phone = $options['phone'] ?? null;
+        $phone = $this->optionNullableString($options, 'phone');
 
         if ($phone === null) {
             return [
@@ -101,8 +101,8 @@ class MpesaProvider extends BasePaymentProvider
         return $this->b2c(
             phone: $this->formatPhone($phone),
             amount: $amount !== null ? (int) ceil($amount / 100) : 0,
-            remarks: $options['remarks'] ?? 'Refund',
-            occasion: $options['occasion'] ?? "Refund for {$providerPaymentId}",
+            remarks: $this->optionString($options, 'remarks', 'Refund'),
+            occasion: $this->optionString($options, 'occasion', "Refund for {$providerPaymentId}"),
         );
     }
 
@@ -110,10 +110,11 @@ class MpesaProvider extends BasePaymentProvider
     public function getPaymentStatus(string $providerPaymentId): string
     {
         $result = $this->stkQuery($providerPaymentId);
+        $resultCode = $result['ResultCode'] ?? '-1';
 
-        return match ($result['ResultCode'] ?? '-1') {
-            '0', 0 => 'completed',
-            '1032', 1032 => 'cancelled',
+        return match (true) {
+            $resultCode === '0' || $resultCode === 0 => 'completed',
+            $resultCode === '1032' || $resultCode === 1032 => 'cancelled',
             default => 'pending',
         };
     }
@@ -134,13 +135,13 @@ class MpesaProvider extends BasePaymentProvider
     {
         // STK Push callback
         $stkCallback = $request->input('Body.stkCallback');
-        if ($stkCallback !== null) {
+        if (is_array($stkCallback)) {
             return $this->parseStkCallback($stkCallback);
         }
 
         // B2C / Transaction Status callback
         $result = $request->input('Result');
-        if ($result !== null) {
+        if (is_array($result)) {
             return $this->parseResultCallback($result);
         }
 
@@ -163,10 +164,10 @@ class MpesaProvider extends BasePaymentProvider
     #[\Override]
     public function isConfigured(): bool
     {
-        return ! empty($this->consumerKey)
-            && ! empty($this->consumerSecret)
-            && ! empty($this->shortcode)
-            && ! empty($this->passkey);
+        return $this->consumerKey !== ''
+            && $this->consumerSecret !== ''
+            && $this->shortcode !== ''
+            && $this->passkey !== '';
     }
 
     #[\Override]
@@ -179,6 +180,8 @@ class MpesaProvider extends BasePaymentProvider
 
     /**
      * Initiate an STK Push to the customer's phone.
+     *
+     * @return array{success: bool, provider_payment_id: string|null, provider_reference: string|null, status: string, metadata: array<string, mixed>}
      */
     public function stkPush(
         string $phone,
@@ -210,14 +213,13 @@ class MpesaProvider extends BasePaymentProvider
         $response = Http::withToken($token)
             ->post($this->baseUrl.'/mpesa/stkpush/v1/processrequest', $payload);
 
-        $data = $response->json();
-
+        $data = $this->asArray($response->json());
         $success = ($data['ResponseCode'] ?? '') === '0';
 
         return [
             'success' => $success,
-            'provider_payment_id' => $data['CheckoutRequestID'] ?? null,
-            'provider_reference' => $data['MerchantRequestID'] ?? null,
+            'provider_payment_id' => isset($data['CheckoutRequestID']) && is_string($data['CheckoutRequestID']) ? $data['CheckoutRequestID'] : null,
+            'provider_reference' => isset($data['MerchantRequestID']) && is_string($data['MerchantRequestID']) ? $data['MerchantRequestID'] : null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -225,6 +227,8 @@ class MpesaProvider extends BasePaymentProvider
 
     /**
      * Query the status of an STK Push request.
+     *
+     * @return array<string, mixed>
      */
     public function stkQuery(string $checkoutRequestId): array
     {
@@ -240,13 +244,15 @@ class MpesaProvider extends BasePaymentProvider
                 'CheckoutRequestID' => $checkoutRequestId,
             ]);
 
-        return $response->json() ?? [];
+        return $this->asArray($response->json());
     }
 
     // ─── C2B (Customer to Business) ────────────────────────────────────
 
     /**
      * Register C2B validation and confirmation URLs with Safaricom.
+     *
+     * @return array<string, mixed>
      */
     public function registerC2bUrls(string $confirmationUrl, string $validationUrl, string $responseType = 'Completed'): array
     {
@@ -260,7 +266,7 @@ class MpesaProvider extends BasePaymentProvider
                 'ValidationURL' => $validationUrl,
             ]);
 
-        return $response->json() ?? [];
+        return $this->asArray($response->json());
     }
 
     /**
@@ -268,6 +274,8 @@ class MpesaProvider extends BasePaymentProvider
      *
      * Triggers a fake customer-to-business payment for testing.
      * This calls the validation → confirmation flow just like a real paybill payment.
+     *
+     * @return array{success: bool, metadata: array<string, mixed>}
      */
     public function simulateC2b(
         string $phone,
@@ -290,7 +298,7 @@ class MpesaProvider extends BasePaymentProvider
         $response = Http::withToken($token)
             ->post($this->baseUrl.'/mpesa/c2b/v1/simulate', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         return [
             'success' => ($data['ResponseCode'] ?? '') === '0',
@@ -304,9 +312,9 @@ class MpesaProvider extends BasePaymentProvider
      * Safaricom sends a validation request before accepting a C2B payment.
      * Pass a validator callable to accept or reject the payment.
      *
-     * @param  callable(array $data): bool  $validator
-     *                                                  Receives the full C2B payload. Return true to accept, false to reject.
-     * @return array Response to send back to Safaricom
+     * @param  callable(array<array-key, mixed> $data): bool  $validator
+     *                                                                    Receives the full C2B payload. Return true to accept, false to reject.
+     * @return array{ResultCode: string, ResultDesc: string} Response to send back to Safaricom
      */
     public function handleC2bValidation(Request $request, callable $validator): array
     {
@@ -323,6 +331,8 @@ class MpesaProvider extends BasePaymentProvider
 
     /**
      * Send money from business to customer (refunds, disbursements).
+     *
+     * @return array{success: bool, provider_refund_id: string|null, status: string, metadata: array<string, mixed>}
      */
     public function b2c(
         string $phone,
@@ -361,12 +371,12 @@ class MpesaProvider extends BasePaymentProvider
         $response = Http::withToken($token)
             ->post($this->baseUrl.'/mpesa/b2c/v1/paymentrequest', $payload);
 
-        $data = $response->json();
+        $data = $this->asArray($response->json());
         $success = ($data['ResponseCode'] ?? '') === '0';
 
         return [
             'success' => $success,
-            'provider_refund_id' => $data['ConversationID'] ?? null,
+            'provider_refund_id' => isset($data['ConversationID']) && is_string($data['ConversationID']) ? $data['ConversationID'] : null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -381,7 +391,7 @@ class MpesaProvider extends BasePaymentProvider
     {
         $cacheKey = 'billing:mpesa:access_token:'.$this->shortcode;
 
-        return Cache::remember($cacheKey, 3300, function (): string {
+        $token = Cache::remember($cacheKey, 3300, function (): string {
             $credentials = base64_encode($this->consumerKey.':'.$this->consumerSecret);
 
             $response = Http::withHeaders([
@@ -390,58 +400,96 @@ class MpesaProvider extends BasePaymentProvider
                 'grant_type' => 'client_credentials',
             ]);
 
-            return $response->json('access_token') ?? '';
+            $token = $response->json('access_token');
+
+            return is_string($token) ? $token : '';
         });
+
+        return $token;
     }
 
     // ─── Callback Parsing ──────────────────────────────────────────────
 
+    /**
+     * @param  array<array-key, mixed>  $callback
+     * @return array{event: string, provider_payment_id: string|null, status: string, amount: int|null, currency: string, metadata: array<string, mixed>}
+     */
     protected function parseStkCallback(array $callback): array
     {
         $resultCode = $callback['ResultCode'] ?? -1;
         $success = $resultCode === 0 || $resultCode === '0';
         $metadata = [];
 
-        if ($success && isset($callback['CallbackMetadata']['Item'])) {
-            foreach ($callback['CallbackMetadata']['Item'] as $item) {
-                $metadata[$item['Name']] = $item['Value'] ?? null;
+        $callbackMeta = $callback['CallbackMetadata'] ?? null;
+        $items = is_array($callbackMeta) && isset($callbackMeta['Item']) && is_array($callbackMeta['Item'])
+            ? $callbackMeta['Item']
+            : [];
+
+        if ($success) {
+            foreach ($items as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $name = $item['Name'] ?? null;
+                if (is_string($name)) {
+                    $metadata[$name] = $item['Value'] ?? null;
+                }
             }
         }
 
+        $amountValue = $metadata['Amount'] ?? null;
+        $amount = is_numeric($amountValue) ? (int) ($amountValue * 100) : null;
+
         return [
             'event' => $success ? 'payment.completed' : 'payment.failed',
-            'provider_payment_id' => $callback['CheckoutRequestID'] ?? null,
+            'provider_payment_id' => isset($callback['CheckoutRequestID']) && is_string($callback['CheckoutRequestID']) ? $callback['CheckoutRequestID'] : null,
             'status' => $success ? 'completed' : 'failed',
-            'amount' => isset($metadata['Amount']) ? (int) ($metadata['Amount'] * 100) : null,
+            'amount' => $amount,
             'currency' => 'KES',
             'metadata' => [
                 'merchant_request_id' => $callback['MerchantRequestID'] ?? null,
                 'result_code' => $resultCode,
                 'result_desc' => $callback['ResultDesc'] ?? null,
                 'mpesa_receipt' => $metadata['MpesaReceiptNumber'] ?? null,
-                'phone' => isset($metadata['PhoneNumber']) ? (string) $metadata['PhoneNumber'] : null,
+                'phone' => isset($metadata['PhoneNumber']) && (is_string($metadata['PhoneNumber']) || is_int($metadata['PhoneNumber'])) ? (string) $metadata['PhoneNumber'] : null,
                 'transaction_date' => $metadata['TransactionDate'] ?? null,
             ],
         ];
     }
 
+    /**
+     * @param  array<array-key, mixed>  $result
+     * @return array{event: string, provider_payment_id: string|null, status: string, amount: int|null, currency: string, metadata: array<string, mixed>}
+     */
     protected function parseResultCallback(array $result): array
     {
         $resultCode = $result['ResultCode'] ?? -1;
         $success = $resultCode === 0 || $resultCode === '0';
         $params = [];
 
-        if (isset($result['ResultParameters']['ResultParameter'])) {
-            foreach ($result['ResultParameters']['ResultParameter'] as $param) {
-                $params[$param['Key']] = $param['Value'] ?? null;
+        $resultParams = $result['ResultParameters'] ?? null;
+        $paramList = is_array($resultParams) && isset($resultParams['ResultParameter']) && is_array($resultParams['ResultParameter'])
+            ? $resultParams['ResultParameter']
+            : [];
+
+        foreach ($paramList as $param) {
+            if (! is_array($param)) {
+                continue;
+            }
+            $key = $param['Key'] ?? null;
+            if (is_string($key)) {
+                $params[$key] = $param['Value'] ?? null;
             }
         }
 
+        $amountValue = $params['TransactionAmount'] ?? null;
+        $amount = is_numeric($amountValue) ? (int) ($amountValue * 100) : null;
+
         return [
             'event' => $success ? 'payment.completed' : 'payment.failed',
-            'provider_payment_id' => $result['ConversationID'] ?? null,
+            'provider_payment_id' => isset($result['ConversationID']) && is_string($result['ConversationID']) ? $result['ConversationID'] : null,
             'status' => $success ? 'completed' : 'failed',
-            'amount' => isset($params['TransactionAmount']) ? (int) ($params['TransactionAmount'] * 100) : null,
+            'amount' => $amount,
             'currency' => 'KES',
             'metadata' => [
                 'transaction_id' => $result['TransactionID'] ?? null,
@@ -453,13 +501,18 @@ class MpesaProvider extends BasePaymentProvider
         ];
     }
 
+    /**
+     * @param  array<array-key, mixed>  $data
+     * @return array{event: string, provider_payment_id: string|null, status: string, amount: int|null, currency: string, metadata: array<string, mixed>}
+     */
     protected function parseC2bCallback(array $data): array
     {
-        $amount = isset($data['TransAmount']) ? (int) (((float) $data['TransAmount']) * 100) : null;
+        $transAmount = $data['TransAmount'] ?? null;
+        $amount = is_numeric($transAmount) ? (int) (((float) $transAmount) * 100) : null;
 
         return [
             'event' => 'payment.completed',
-            'provider_payment_id' => $data['TransID'] ?? null,
+            'provider_payment_id' => isset($data['TransID']) && is_string($data['TransID']) ? $data['TransID'] : null,
             'status' => 'completed',
             'amount' => $amount,
             'currency' => 'KES',
@@ -489,7 +542,8 @@ class MpesaProvider extends BasePaymentProvider
      */
     protected function formatPhone(string $phone): string
     {
-        $phone = preg_replace('/[^0-9]/', '', $phone) ?? $phone;
+        $cleaned = preg_replace('/[^0-9]/', '', $phone);
+        $phone = is_string($cleaned) ? $cleaned : $phone;
 
         if (str_starts_with($phone, '+')) {
             $phone = substr($phone, 1);
@@ -516,6 +570,10 @@ class MpesaProvider extends BasePaymentProvider
         } else {
             // Use default sandbox certificate
             $publicKey = $this->getDefaultCertificate();
+        }
+
+        if (! is_string($publicKey)) {
+            return '';
         }
 
         $encrypted = '';

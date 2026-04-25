@@ -18,7 +18,7 @@ class BillingServiceTest extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->billing = $this->app->make(BillingService::class);
+        $this->billing = $this->app()->make(BillingService::class);
     }
 
     public function test_get_all_active_plans(): void
@@ -46,7 +46,9 @@ class BillingServiceTest extends BaseTestCase
         $plans = $this->billing->plans();
 
         $this->assertCount(1, $plans);
-        $this->assertEquals('Active Plan', $plans->first()->name);
+        $first = $plans->first();
+        $this->assertNotNull($first);
+        $this->assertEquals('Active Plan', $first->name);
     }
 
     public function test_get_plan_by_slug(): void
@@ -82,7 +84,9 @@ class BillingServiceTest extends BaseTestCase
         $features = $this->billing->features();
 
         $this->assertCount(1, $features);
-        $this->assertEquals('feature-a', $features->first()->slug);
+        $first = $features->first();
+        $this->assertNotNull($first);
+        $this->assertEquals('feature-a', $first->slug);
     }
 
     public function test_get_all_addons(): void
@@ -93,7 +97,9 @@ class BillingServiceTest extends BaseTestCase
         $addons = $this->billing->addons();
 
         $this->assertCount(1, $addons);
-        $this->assertEquals('addon-feature', $addons->first()->slug);
+        $first = $addons->first();
+        $this->assertNotNull($first);
+        $this->assertEquals('addon-feature', $first->slug);
     }
 
     public function test_has_feature_true(): void
@@ -226,6 +232,7 @@ class BillingServiceTest extends BaseTestCase
 
         // Should not throw
         $this->billing->clearCache($company);
-        $this->assertTrue(true);
+        // No exception means success — phpunit will mark this as risky if no assertion runs
+        $this->expectNotToPerformAssertions();
     }
 }

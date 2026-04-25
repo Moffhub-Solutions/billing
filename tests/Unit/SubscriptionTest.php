@@ -109,10 +109,14 @@ class SubscriptionTest extends BaseTestCase
         $subscription = $this->company->subscribe('standard')->create();
 
         $subscription->pause();
-        $this->assertEquals(SubscriptionStatus::PAUSED, $subscription->fresh()->status);
+        $pausedFresh = $subscription->fresh();
+        $this->assertNotNull($pausedFresh);
+        $this->assertEquals(SubscriptionStatus::PAUSED, $pausedFresh->status);
 
         $subscription->resume();
-        $this->assertEquals(SubscriptionStatus::ACTIVE, $subscription->fresh()->status);
+        $resumedFresh = $subscription->fresh();
+        $this->assertNotNull($resumedFresh);
+        $this->assertEquals(SubscriptionStatus::ACTIVE, $resumedFresh->status);
     }
 
     public function test_usage_limit(): void

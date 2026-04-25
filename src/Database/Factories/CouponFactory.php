@@ -17,11 +17,16 @@ class CouponFactory extends Factory
 {
     protected $model = Coupon::class;
 
+    /**
+     * @return array<string, mixed>
+     */
     public function definition(): array
     {
+        $words = fake()->words(2, true);
+
         return [
             'ulid' => Str::ulid()->toBase32(),
-            'name' => fake()->words(2, true).' Discount',
+            'name' => (is_string($words) ? $words : 'discount').' Discount',
             'discount_type' => DiscountType::PERCENT,
             'discount_value' => fake()->randomElement([10, 15, 20, 25, 50]),
             'duration' => CouponDuration::ONCE,

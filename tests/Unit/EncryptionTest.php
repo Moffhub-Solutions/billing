@@ -33,9 +33,14 @@ class EncryptionTest extends BaseTestCase
 
         $encrypted = $encryptor->encrypt($data, ['phone', 'email']);
 
+        $encryptedPhone = $encrypted['phone'] ?? null;
+        $encryptedEmail = $encrypted['email'] ?? null;
+        $this->assertIsString($encryptedPhone);
+        $this->assertIsString($encryptedEmail);
+
         // Phone and email should be encrypted (longer than original due to ciphertext)
-        $this->assertNotEquals(strlen('254712345678'), strlen((string) $encrypted['phone']));
-        $this->assertNotEquals(strlen('test@example.com'), strlen((string) $encrypted['email']));
+        $this->assertNotEquals(strlen('254712345678'), strlen($encryptedPhone));
+        $this->assertNotEquals(strlen('test@example.com'), strlen($encryptedEmail));
         // Name should be untouched
         $this->assertEquals('John Doe', $encrypted['name']);
 
@@ -84,10 +89,12 @@ class EncryptionTest extends BaseTestCase
         $scrubbed = $encryptor->scrubForLogging($data);
 
         $this->assertEquals('***REDACTED***', $scrubbed['token']);
-        $this->assertEquals('***REDACTED***', $scrubbed['nested']['api_key']);
+        $nested = $scrubbed['nested'] ?? null;
+        $this->assertIsArray($nested);
+        $this->assertEquals('***REDACTED***', $nested['api_key']);
         $this->assertEquals('mpesa', $scrubbed['provider']);
         $this->assertEquals(5000, $scrubbed['amount']);
-        $this->assertEquals('visible', $scrubbed['nested']['name']);
+        $this->assertEquals('visible', $nested['name']);
     }
 
     public function test_payment_token_encrypts_pii_when_enabled(): void
@@ -111,14 +118,21 @@ class EncryptionTest extends BaseTestCase
         $this->assertEquals('customer@example.com', $token->email);
 
         // Raw database values should be encrypted (not plaintext)
-        $raw = DB::table(config('billing.tables.payment_tokens'))->find($token->id);
-        $this->assertNotEquals('AUTH_secret_token_12345', $raw->token);
-        $this->assertNotEquals('254712345678', $raw->phone);
-        $this->assertNotEquals('customer@example.com', $raw->email);
+        $raw = DB::table(billing_table('payment_tokens', 'billing_payment_tokens'))->find($token->id);
+        $this->assertInstanceOf(\stdClass::class, $raw);
+        $rawToken = $raw->token ?? null;
+        $rawPhone = $raw->phone ?? null;
+        $rawEmail = $raw->email ?? null;
+        $this->assertIsString($rawToken);
+        $this->assertIsString($rawPhone);
+        $this->assertIsString($rawEmail);
+        $this->assertNotEquals('AUTH_secret_token_12345', $rawToken);
+        $this->assertNotEquals('254712345678', $rawPhone);
+        $this->assertNotEquals('customer@example.com', $rawEmail);
 
         // Verify raw values are decryptable
-        $this->assertEquals('AUTH_secret_token_12345', Crypt::decryptString($raw->token));
-        $this->assertEquals('254712345678', Crypt::decryptString($raw->phone));
+        $this->assertEquals('AUTH_secret_token_12345', Crypt::decryptString($rawToken));
+        $this->assertEquals('254712345678', Crypt::decryptString($rawPhone));
     }
 
     public function test_payment_token_skips_encryption_when_disabled(): void
@@ -136,9 +150,10 @@ class EncryptionTest extends BaseTestCase
         ]);
 
         // Raw database values should be plaintext
-        $raw = DB::table(config('billing.tables.payment_tokens'))->find($token->id);
-        $this->assertEquals('AUTH_plaintext_token', $raw->token);
-        $this->assertEquals('254712345678', $raw->phone);
+        $raw = DB::table(billing_table('payment_tokens', 'billing_payment_tokens'))->find($token->id);
+        $this->assertInstanceOf(\stdClass::class, $raw);
+        $this->assertEquals('AUTH_plaintext_token', $raw->token ?? null);
+        $this->assertEquals('254712345678', $raw->phone ?? null);
     }
 
     public function test_payment_token_hides_token_in_serialization(): void

@@ -64,17 +64,25 @@ class PayOrchestraSmokeTestCommand extends Command
             return self::FAILURE;
         }
 
+        $providerPaymentIdRaw = $intent['provider_payment_id'] ?? null;
+        $providerPaymentId = is_string($providerPaymentIdRaw) ? $providerPaymentIdRaw : '';
+
         // Step 4 — read the intent back
-        if (! $this->stepReadIntent($driver, (string) $intent['provider_payment_id'])) {
+        if (! $this->stepReadIntent($driver, $providerPaymentId)) {
             return self::FAILURE;
         }
 
         $this->newLine();
         $this->info('Smoke test passed.');
-        $this->line("Provider payment id: {$intent['provider_payment_id']}");
-        if (! empty($intent['metadata']['checkout_url'])) {
-            $this->line('Checkout URL (drive a sandbox charge here to exercise the webhook chain):');
-            $this->line('  '.$intent['metadata']['checkout_url']);
+        $this->line("Provider payment id: {$providerPaymentId}");
+
+        $metadataRaw = $intent['metadata'] ?? null;
+        if (is_array($metadataRaw)) {
+            $checkoutUrlRaw = $metadataRaw['checkout_url'] ?? null;
+            if (is_string($checkoutUrlRaw) && $checkoutUrlRaw !== '') {
+                $this->line('Checkout URL (drive a sandbox charge here to exercise the webhook chain):');
+                $this->line('  '.$checkoutUrlRaw);
+            }
         }
 
         return self::SUCCESS;
@@ -115,10 +123,15 @@ class PayOrchestraSmokeTestCommand extends Command
         return true;
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
     private function stepCreateIntent(PayOrchestraProvider $driver): ?array
     {
-        $amount = max(1, (int) $this->option('amount'));
-        $currency = (string) $this->option('currency');
+        $amountRaw = $this->option('amount');
+        $amount = max(1, is_numeric($amountRaw) ? (int) $amountRaw : 1);
+        $currencyRaw = $this->option('currency');
+        $currency = is_string($currencyRaw) ? $currencyRaw : 'KES';
         $callbackUrl = $this->option('callback-url');
 
         $options = [
@@ -138,8 +151,10 @@ class PayOrchestraSmokeTestCommand extends Command
         }
 
         if (! $result['success']) {
-            $error = $result['metadata']['error'] ?? 'unknown';
-            $http = $result['metadata']['http_status'] ?? '—';
+            $errorRaw = $result['metadata']['error'] ?? 'unknown';
+            $error = is_string($errorRaw) ? $errorRaw : 'unknown';
+            $httpRaw = $result['metadata']['http_status'] ?? '—';
+            $http = (is_string($httpRaw) || is_int($httpRaw)) ? (string) $httpRaw : '—';
             $this->error("[3/4] charge() failed (HTTP {$http}): {$error}");
 
             return null;

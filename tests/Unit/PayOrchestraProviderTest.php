@@ -270,7 +270,7 @@ class PayOrchestraProviderTest extends BaseTestCase
 
         $this->assertFalse($result['success']);
         $this->assertNull($result['session_url']);
-        $this->assertEquals('Org not enabled for hosted checkout', $result['error']);
+        $this->assertEquals('Org not enabled for hosted checkout', $result['error'] ?? null);
     }
 
     public function test_available_channels_filters_inactive_connectors(): void
@@ -304,7 +304,9 @@ class PayOrchestraProviderTest extends BaseTestCase
         $result = $this->provider->settlements(['from' => '2026-04-01']);
 
         $this->assertCount(1, $result);
-        $this->assertEquals('settle_1', $result[0]['id']);
+        $first = $result[0] ?? null;
+        $this->assertIsArray($first);
+        $this->assertEquals('settle_1', $first['id'] ?? null);
     }
 
     public function test_payment_manager_creates_payorchestra_driver(): void

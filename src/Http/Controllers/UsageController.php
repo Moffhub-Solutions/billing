@@ -6,11 +6,10 @@ namespace Moffhub\Billing\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
 use Moffhub\Billing\Http\Resources\UsageRecordResource;
 use Moffhub\Billing\Services\UsageService;
 
-class UsageController extends Controller
+class UsageController extends BillingController
 {
     public function __construct(
         protected UsageService $usageService,
@@ -106,12 +105,18 @@ class UsageController extends Controller
             ], 429);
         }
 
+        $transactionIdRaw = $request->input('transaction_id');
+        $transactionId = is_string($transactionIdRaw) ? $transactionIdRaw : null;
+
+        $propertiesRaw = $request->input('properties', []);
+        $properties = is_array($propertiesRaw) ? $propertiesRaw : [];
+
         $event = $this->usageService->record(
             $billable,
             $featureSlug,
             $request->integer('quantity', 1),
-            $request->input('transaction_id'),
-            $request->input('properties', []),
+            $transactionId,
+            $properties,
         );
 
         return response()->json([
@@ -125,26 +130,5 @@ class UsageController extends Controller
                 'remaining' => $billable->remainingQuota($featureSlug),
             ],
         ], 201);
-    }
-
-    protected function resolveBillable(Request $request): mixed
-    {
-        $user = $request->user();
-
-        if ($user === null) {
-            return null;
-        }
-
-        if (method_exists($user, 'usageRecords')) {
-            return $user;
-        }
-
-        $billableRelation = config('billing.billable_relation', 'company');
-
-        if (method_exists($user, $billableRelation)) {
-            return $user->{$billableRelation};
-        }
-
-        return null;
     }
 }

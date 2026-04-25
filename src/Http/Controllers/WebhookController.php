@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Events\PaymentFailed;
 use Moffhub\Billing\Events\PaymentReceived;
@@ -125,6 +126,12 @@ class WebhookController extends Controller
         try {
             $driver = $this->paymentManager->driver($providerName);
 
+            if (! $driver instanceof PaymentProviderInterface) {
+                Log::error("Billing webhook: driver for {$providerName} is not a PaymentProviderInterface");
+
+                return response()->json(['error' => 'Invalid driver'], 500);
+            }
+
             // Verify signature
             if (! $driver->verifyWebhook($request)) {
                 Log::warning("Billing webhook: Invalid signature from {$providerName}", [
@@ -192,7 +199,8 @@ class WebhookController extends Controller
         }
 
         DB::transaction(function () use ($providerName, $providerPaymentId, $newStatus, $event): void {
-            $payment = Payment::where('provider_payment_id', $providerPaymentId)
+            $payment = Payment::query()
+                ->where('provider_payment_id', $providerPaymentId)
                 ->lockForUpdate()
                 ->first();
 
@@ -211,8 +219,8 @@ class WebhookController extends Controller
 
             $payment->status = $newStatus;
             $payment->payment_provider = $payment->payment_provider ?? $providerName;
-            $payment->provider_reference = $event['metadata']['provider_reference']
-                ?? $payment->provider_reference;
+            $providerRef = $event['metadata']['provider_reference'] ?? $payment->provider_reference;
+            $payment->provider_reference = is_string($providerRef) ? $providerRef : $payment->provider_reference;
 
             $merged = array_merge((array) ($payment->metadata ?? []), $event['metadata']);
             $payment->metadata = $merged;
@@ -248,12 +256,15 @@ class WebhookController extends Controller
                     $payment->provider_reference,
                 );
             } elseif ($newStatus === PaymentStatus::FAILED) {
+                $failureReasonRaw = $event['metadata']['failure_reason'] ?? 'Webhook reported failure';
+                $failureReason = is_string($failureReasonRaw) ? $failureReasonRaw : 'Webhook reported failure';
+
                 PaymentFailed::dispatch(
                     $payment,
                     $billable,
                     (int) $payment->amount,
                     (string) $payment->currency,
-                    $event['metadata']['failure_reason'] ?? 'Webhook reported failure',
+                    $failureReason,
                 );
             }
         });

@@ -7,6 +7,7 @@ namespace Moffhub\Billing;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
@@ -64,7 +65,7 @@ class BillingServiceProvider extends ServiceProvider
         $this->app->singleton(TaxCalculatorInterface::class, function ($app) {
             $customClass = config('billing.tax.calculator');
 
-            if ($customClass && class_exists($customClass)) {
+            if (is_string($customClass) && $customClass !== '' && class_exists($customClass)) {
                 return $app->make($customClass);
             }
 
@@ -184,7 +185,12 @@ class BillingServiceProvider extends ServiceProvider
 
         foreach (glob($from.DIRECTORY_SEPARATOR.'*.php') ?: [] as $file) {
             $name = preg_replace('/^\d{4}_\d{2}_\d{2}_\d{6}_create_billing_/', '', basename($file, '.php'));
-            $name = preg_replace('/_table$/', '', $name);
+            $name = preg_replace('/_table$/', '', (string) $name);
+
+            if ($name === null) {
+                continue;
+            }
+
             $available[$name] = $file;
         }
 
@@ -234,18 +240,27 @@ class BillingServiceProvider extends ServiceProvider
 
     /**
      * Get the route group configuration.
+     *
+     * @return array{prefix: string, middleware: array<int, string>}
      */
     protected function routeConfiguration(): array
     {
-        $middleware = config('billing.routes.middleware', ['api']);
+        $middlewareConfig = config('billing.routes.middleware', ['api']);
+        /** @var array<int, string> $middleware */
+        $middleware = is_array($middlewareConfig)
+            ? array_values(array_filter($middlewareConfig, fn ($v): bool => is_string($v)))
+            : ['api'];
+
         $rateLimit = config('billing.routes.rate_limit');
 
         if ($rateLimit) {
             $middleware[] = 'throttle:billing';
         }
 
+        $prefix = config('billing.routes.prefix', 'api/billing');
+
         return [
-            'prefix' => config('billing.routes.prefix', 'api/billing'),
+            'prefix' => is_string($prefix) ? $prefix : 'api/billing',
             'middleware' => $middleware,
         ];
     }
@@ -259,8 +274,11 @@ class BillingServiceProvider extends ServiceProvider
             return;
         }
 
-        $prefix = config('billing.webhooks.prefix', 'billing/webhooks');
-        $rateLimit = (int) config('billing.webhooks.rate_limit', 60);
+        $prefixValue = config('billing.webhooks.prefix', 'billing/webhooks');
+        $prefix = is_string($prefixValue) ? $prefixValue : 'billing/webhooks';
+
+        $rateLimitValue = config('billing.webhooks.rate_limit', 60);
+        $rateLimit = is_numeric($rateLimitValue) ? (int) $rateLimitValue : 60;
 
         RateLimiter::for('billing-webhooks', fn (Request $request) => Limit::perMinute($rateLimit)->by($request->ip()));
 
@@ -306,14 +324,23 @@ class BillingServiceProvider extends ServiceProvider
      */
     protected function configureRateLimiting(): void
     {
-        $maxAttempts = (int) config('billing.routes.rate_limit', 60);
+        $maxAttemptsValue = config('billing.routes.rate_limit', 60);
+        $maxAttempts = is_numeric($maxAttemptsValue) ? (int) $maxAttemptsValue : 60;
 
         if ($maxAttempts <= 0) {
             return;
         }
 
-        RateLimiter::for('billing', fn (Request $request) => Limit::perMinute($maxAttempts)
-            ->by($request->user()?->getAuthIdentifier() ?: $request->ip()));
+        RateLimiter::for('billing', function (Request $request) use ($maxAttempts) {
+            $user = $request->user();
+            $identifier = $user?->getAuthIdentifier();
+
+            $key = (is_string($identifier) || is_int($identifier)) && (string) $identifier !== ''
+                ? (string) $identifier
+                : (string) $request->ip();
+
+            return Limit::perMinute($maxAttempts)->by($key);
+        });
     }
 
     /**
@@ -321,16 +348,18 @@ class BillingServiceProvider extends ServiceProvider
      */
     protected function validateConfig(): void
     {
-        $provider = config('billing.default_provider');
+        $providerValue = config('billing.default_provider');
+        $provider = is_string($providerValue) ? $providerValue : '';
         $validProviders = ['mpesa', 'paystack', 'flutterwave', 'pesapal', 'airtel', 'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba', 'intasend', 'manual'];
 
-        if ($provider && ! in_array($provider, $validProviders, true)) {
+        if ($provider !== '' && ! in_array($provider, $validProviders, true)) {
             Log::warning("Billing: Unrecognized default provider '{$provider}'. Valid providers: ".implode(', ', $validProviders));
         }
 
-        $currency = config('billing.currency');
+        $currencyValue = config('billing.currency');
+        $currency = is_string($currencyValue) ? $currencyValue : '';
 
-        if ($currency && strlen((string) $currency) !== 3) {
+        if ($currency !== '' && strlen($currency) !== 3) {
             Log::warning("Billing: Currency '{$currency}' should be a 3-letter ISO 4217 code (e.g., KES, USD).");
         }
     }
@@ -341,63 +370,89 @@ class BillingServiceProvider extends ServiceProvider
     protected function registerBladeDirectives(): void
     {
         // @feature('ocr_scanning') ... @endfeature
-        Blade::if('feature', function (string $featureSlug) {
-            $user = auth()->user();
+        Blade::if('feature', function (string $featureSlug): bool {
+            $user = Auth::user();
 
             if ($user === null) {
                 return false;
             }
 
-            $billable = $user;
+            $billable = $this->resolveBillable($user);
 
-            if (! method_exists($user, 'hasFeature')) {
-                $billableRelation = config('billing.billable_relation', 'company');
-
-                $billable = method_exists($user, $billableRelation)
-                    ? $user->{$billableRelation}
-                    : null;
-            }
-
-            if ($billable === null) {
+            if (! is_object($billable)) {
                 return false;
             }
 
             // Admin bypass
-            if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin()) {
+            if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin() === true) {
                 return true;
             }
 
-            return method_exists($billable, 'hasFeature') && $billable->hasFeature($featureSlug);
+            return method_exists($billable, 'hasFeature') && $billable->hasFeature($featureSlug) === true;
         });
 
         // @plan('professional') ... @endplan
-        Blade::if('plan', function (string $planSlug) {
-            $user = auth()->user();
+        Blade::if('plan', function (string $planSlug): bool {
+            $user = Auth::user();
 
             if ($user === null) {
                 return false;
             }
 
-            $billable = $user;
+            $billable = $this->resolveBillableForPlan($user);
 
-            if (! method_exists($user, 'onPlan')) {
-                $billableRelation = config('billing.billable_relation', 'company');
-
-                $billable = method_exists($user, $billableRelation)
-                    ? $user->{$billableRelation}
-                    : null;
-            }
-
-            if ($billable === null) {
+            if (! is_object($billable)) {
                 return false;
             }
 
             // Admin bypass
-            if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin()) {
+            if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin() === true) {
                 return true;
             }
 
-            return method_exists($billable, 'onPlan') && $billable->onPlan($planSlug);
+            return method_exists($billable, 'onPlan') && $billable->onPlan($planSlug) === true;
         });
+    }
+
+    /**
+     * Resolve a billable instance from the current user for feature checks.
+     */
+    protected function resolveBillable(object $user): ?object
+    {
+        if (method_exists($user, 'hasFeature')) {
+            return $user;
+        }
+
+        $relationValue = config('billing.billable_relation', 'company');
+        $relation = is_string($relationValue) ? $relationValue : 'company';
+
+        if (! method_exists($user, $relation)) {
+            return null;
+        }
+
+        $resolved = $user->{$relation};
+
+        return is_object($resolved) ? $resolved : null;
+    }
+
+    /**
+     * Resolve a billable instance from the current user for plan checks.
+     */
+    protected function resolveBillableForPlan(object $user): ?object
+    {
+        if (method_exists($user, 'onPlan')) {
+            return $user;
+        }
+
+        $relationValue = config('billing.billable_relation', 'company');
+        $relation = is_string($relationValue) ? $relationValue : 'company';
+
+        if (! method_exists($user, $relation)) {
+            return null;
+        }
+
+        $resolved = $user->{$relation};
+
+        return is_object($resolved) ? $resolved : null;
     }
 }

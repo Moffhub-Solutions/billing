@@ -54,20 +54,20 @@ class PayOrchestraProvider extends BasePaymentProvider
         $this->logRequest('POST', '/api/v1/client/payment-intents', $this->scrubSensitiveData([
             'amount' => $amount,
             'currency' => $currency,
-            'channel' => $options['channel'] ?? null,
+            'channel' => $this->optionNullableString($options, 'channel'),
         ]));
 
         $payload = array_filter([
             'amount' => $amount,
             'currency' => $currency,
-            'reference' => $options['reference'] ?? null,
-            'metadata' => $options['metadata'] ?? [],
-            'callback_url' => $options['callback_url'] ?? $this->defaultCallbackUrl(),
-            'channel' => $options['channel'] ?? null,
-            'payer_phone' => $options['phone'] ?? null,
-            'payer_email' => $options['email'] ?? null,
-            'redirect_url' => $options['redirect_url'] ?? null,
-        ], fn ($v) => $v !== null);
+            'reference' => $this->optionNullableString($options, 'reference'),
+            'metadata' => $this->optionArray($options, 'metadata'),
+            'callback_url' => $this->optionString($options, 'callback_url', $this->defaultCallbackUrl() ?? ''),
+            'channel' => $this->optionNullableString($options, 'channel'),
+            'payer_phone' => $this->optionNullableString($options, 'phone'),
+            'payer_email' => $this->optionNullableString($options, 'email'),
+            'redirect_url' => $this->optionNullableString($options, 'redirect_url'),
+        ], fn ($v) => $v !== null && $v !== '');
 
         $response = $this->client()->post('/api/v1/client/payment-intents', $payload);
 
@@ -78,24 +78,22 @@ class PayOrchestraProvider extends BasePaymentProvider
                 'provider_reference' => null,
                 'status' => 'failed',
                 'metadata' => [
-                    'error' => $response->json('error.message', 'PayOrchestra request failed'),
-                    'code' => $response->json('error.code'),
+                    'error' => $this->jsonString($response, 'error.message', 'PayOrchestra request failed'),
+                    'code' => $this->jsonNullableString($response, 'error.code'),
                     'http_status' => $response->status(),
                 ],
             ];
         }
 
-        $data = $response->json('data', []);
-
         return [
             'success' => true,
-            'provider_payment_id' => $data['id'] ?? null,
-            'provider_reference' => $data['reference_code'] ?? null,
-            'status' => $this->mapStatus($data['status'] ?? 'pending'),
+            'provider_payment_id' => $this->jsonNullableString($response, 'data.id'),
+            'provider_reference' => $this->jsonNullableString($response, 'data.reference_code'),
+            'status' => $this->mapStatus($this->jsonString($response, 'data.status', 'pending')),
             'metadata' => [
-                'channel' => $data['channel'] ?? null,
-                'checkout_url' => $data['checkout_url'] ?? null,
-                'hosted_payment_url' => $data['hosted_payment_url'] ?? null,
+                'channel' => $this->jsonNullableString($response, 'data.channel'),
+                'checkout_url' => $this->jsonNullableString($response, 'data.checkout_url'),
+                'hosted_payment_url' => $this->jsonNullableString($response, 'data.hosted_payment_url'),
             ],
         ];
     }
@@ -105,7 +103,7 @@ class PayOrchestraProvider extends BasePaymentProvider
     {
         $payload = array_filter([
             'amount' => $amount,
-            'reason' => $options['reason'] ?? null,
+            'reason' => $this->optionNullableString($options, 'reason'),
         ], fn ($v) => $v !== null);
 
         $response = $this->client()
@@ -117,18 +115,25 @@ class PayOrchestraProvider extends BasePaymentProvider
                 'provider_refund_id' => null,
                 'status' => 'failed',
                 'metadata' => [
-                    'error' => $response->json('error.message', 'PayOrchestra refund failed'),
+                    'error' => $this->jsonString($response, 'error.message', 'PayOrchestra refund failed'),
                 ],
             ];
         }
 
-        $data = $response->json('data', []);
+        $metadata = $this->jsonArray($response, 'data');
+        /** @var array<string, mixed> $metadataTyped */
+        $metadataTyped = [];
+        foreach ($metadata as $k => $v) {
+            if (is_string($k)) {
+                $metadataTyped[$k] = $v;
+            }
+        }
 
         return [
             'success' => true,
-            'provider_refund_id' => $data['id'] ?? null,
-            'status' => $this->mapStatus($data['status'] ?? 'pending'),
-            'metadata' => $data,
+            'provider_refund_id' => $this->jsonNullableString($response, 'data.id'),
+            'status' => $this->mapStatus($this->jsonString($response, 'data.status', 'pending')),
+            'metadata' => $metadataTyped,
         ];
     }
 
@@ -141,15 +146,16 @@ class PayOrchestraProvider extends BasePaymentProvider
             return 'unknown';
         }
 
-        return $this->mapStatus($response->json('data.status', 'unknown'));
+        return $this->mapStatus($this->jsonString($response, 'data.status', 'unknown'));
     }
 
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        $signature = $request->header('X-PayOrchestra-Signature');
+        $signatureRaw = $request->header('X-PayOrchestra-Signature');
+        $signature = is_string($signatureRaw) ? $signatureRaw : '';
 
-        if ($signature === null || $signature === '') {
+        if ($signature === '') {
             return false;
         }
 
@@ -169,18 +175,30 @@ class PayOrchestraProvider extends BasePaymentProvider
     #[\Override]
     public function parseWebhook(Request $request): array
     {
-        $event = $request->input('event', 'payment_intent.updated');
-        $data = (array) $request->input('data', []);
+        $eventRaw = $request->input('event', 'payment_intent.updated');
+        $event = is_string($eventRaw) ? $eventRaw : 'payment_intent.updated';
+
+        $dataRaw = $request->input('data', []);
+        $data = is_array($dataRaw) ? $dataRaw : [];
+
+        $statusValue = $data['status'] ?? '';
+        $status = is_string($statusValue) ? $statusValue : '';
+
+        $amountValue = $data['amount'] ?? null;
+        $amount = is_numeric($amountValue) ? (int) $amountValue : null;
+
+        $metadataRaw = $data['metadata'] ?? [];
+        $metadata = is_array($metadataRaw) ? $metadataRaw : [];
 
         return [
             'event' => $event,
-            'provider_payment_id' => $data['id'] ?? null,
-            'provider_reference' => $data['reference_code'] ?? null,
-            'status' => $this->mapStatus($data['status'] ?? ''),
-            'amount' => isset($data['amount']) ? (int) $data['amount'] : null,
-            'currency' => $data['currency'] ?? null,
+            'provider_payment_id' => isset($data['id']) && is_string($data['id']) ? $data['id'] : null,
+            'provider_reference' => isset($data['reference_code']) && is_string($data['reference_code']) ? $data['reference_code'] : null,
+            'status' => $this->mapStatus($status),
+            'amount' => $amount,
+            'currency' => isset($data['currency']) && is_string($data['currency']) ? $data['currency'] : null,
             'metadata' => array_merge(
-                $data['metadata'] ?? [],
+                $metadata,
                 [
                     'provider_reference' => $data['reference_code'] ?? null,
                     'channel' => $data['channel'] ?? null,
@@ -195,20 +213,23 @@ class PayOrchestraProvider extends BasePaymentProvider
      * Create a hosted payment session.
      *
      * Returns a URL to redirect the payer to PayOrchestra's hosted checkout.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array{success: bool, session_url: string|null, session_id: string|null, expires_at: string|null, error?: string}
      */
     public function createHostedSession(int $amount, string $currency, array $options = []): array
     {
         $payload = array_filter([
             'amount' => $amount,
             'currency' => $currency,
-            'reference' => $options['reference'] ?? null,
-            'description' => $options['description'] ?? null,
-            'payer_name' => $options['payer_name'] ?? null,
-            'payer_email' => $options['payer_email'] ?? null,
-            'payer_phone' => $options['payer_phone'] ?? null,
-            'success_url' => $options['success_url'] ?? null,
-            'cancel_url' => $options['cancel_url'] ?? null,
-            'metadata' => $options['metadata'] ?? [],
+            'reference' => $this->optionNullableString($options, 'reference'),
+            'description' => $this->optionNullableString($options, 'description'),
+            'payer_name' => $this->optionNullableString($options, 'payer_name'),
+            'payer_email' => $this->optionNullableString($options, 'payer_email'),
+            'payer_phone' => $this->optionNullableString($options, 'payer_phone'),
+            'success_url' => $this->optionNullableString($options, 'success_url'),
+            'cancel_url' => $this->optionNullableString($options, 'cancel_url'),
+            'metadata' => $this->optionArray($options, 'metadata'),
         ], fn ($v) => $v !== null);
 
         $response = $this->client()->post('/api/v1/client/hosted-payments/sessions', $payload);
@@ -219,17 +240,15 @@ class PayOrchestraProvider extends BasePaymentProvider
                 'session_url' => null,
                 'session_id' => null,
                 'expires_at' => null,
-                'error' => $response->json('error.message', 'PayOrchestra hosted session failed'),
+                'error' => $this->jsonString($response, 'error.message', 'PayOrchestra hosted session failed'),
             ];
         }
 
-        $data = $response->json('data', []);
-
         return [
             'success' => true,
-            'session_url' => $data['payment_url'] ?? null,
-            'session_id' => $data['id'] ?? null,
-            'expires_at' => $data['expires_at'] ?? null,
+            'session_url' => $this->jsonNullableString($response, 'data.payment_url'),
+            'session_id' => $this->jsonNullableString($response, 'data.id'),
+            'expires_at' => $this->jsonNullableString($response, 'data.expires_at'),
         ];
     }
 
@@ -246,30 +265,49 @@ class PayOrchestraProvider extends BasePaymentProvider
             return [];
         }
 
-        $connectors = $response->json('data', []);
+        $connectors = $this->jsonArray($response, 'data');
 
-        return collect($connectors)
-            ->filter(fn (array $c) => ($c['status'] ?? null) === 'active')
-            ->map(fn (array $c) => [
-                'slug' => $c['slug'] ?? '',
-                'name' => $c['name'] ?? '',
-                'channels' => $c['supported_channels'] ?? [],
-                'health' => $c['health_status'] ?? 'unknown',
-            ])
-            ->values()
-            ->all();
+        $result = [];
+        foreach ($connectors as $c) {
+            if (! is_array($c)) {
+                continue;
+            }
+            if (($c['status'] ?? null) !== 'active') {
+                continue;
+            }
+
+            $channelsRaw = $c['supported_channels'] ?? [];
+            $channels = [];
+            if (is_array($channelsRaw)) {
+                foreach ($channelsRaw as $channel) {
+                    if (is_string($channel)) {
+                        $channels[] = $channel;
+                    }
+                }
+            }
+
+            $result[] = [
+                'slug' => isset($c['slug']) && is_string($c['slug']) ? $c['slug'] : '',
+                'name' => isset($c['name']) && is_string($c['name']) ? $c['name'] : '',
+                'channels' => $channels,
+                'health' => isset($c['health_status']) && is_string($c['health_status']) ? $c['health_status'] : 'unknown',
+            ];
+        }
+
+        return $result;
     }
 
     /**
      * Query the PayOrchestra ledger for settlement data.
      *
      * @param  array<string, mixed>  $filters
+     * @return array<array-key, mixed>
      */
     public function settlements(array $filters = []): array
     {
         $response = $this->client()->get('/api/v1/client/settlements', $filters);
 
-        return $response->successful() ? (array) $response->json('data', []) : [];
+        return $response->successful() ? $this->jsonArray($response, 'data') : [];
     }
 
     protected function client(): PendingRequest
@@ -296,7 +334,9 @@ class PayOrchestraProvider extends BasePaymentProvider
 
     protected function defaultCallbackUrl(): ?string
     {
-        return app('router')->has('billing.webhooks.payorchestra')
+        $router = app('router');
+
+        return $router->has('billing.webhooks.payorchestra')
             ? route('billing.webhooks.payorchestra')
             : null;
     }

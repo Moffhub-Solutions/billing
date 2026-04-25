@@ -74,8 +74,17 @@ class ReconcileWithPayOrchestraCommand extends Command
 
             $providerStatus = null;
 
+            $providerPaymentId = $payment->provider_payment_id;
+
+            if ($providerPaymentId === null) {
+                $errors++;
+                $this->warn("[{$payment->ulid}] payment has no provider_payment_id");
+
+                continue;
+            }
+
             try {
-                $providerStatus = $driver->getPaymentStatus($payment->provider_payment_id);
+                $providerStatus = $driver->getPaymentStatus($providerPaymentId);
             } catch (\Throwable $e) {
                 $errors++;
                 $this->warn("[{$payment->ulid}] backbone query failed: {$e->getMessage()}");
@@ -90,9 +99,7 @@ class ReconcileWithPayOrchestraCommand extends Command
                 continue;
             }
 
-            $billingStatus = $payment->status instanceof PaymentStatus
-                ? $payment->status->value
-                : (string) $payment->status;
+            $billingStatus = $payment->status->value;
 
             if ($this->statusesAgree($billingStatus, $providerStatus)) {
                 continue;

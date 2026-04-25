@@ -53,7 +53,7 @@ class EventDispatchTest extends BaseTestCase
 
         Event::assertDispatched(SubscriptionCreated::class, function (SubscriptionCreated $event) use ($subscription) {
             return $event->subscription->id === $subscription->id
-                && $event->billable->id === $this->company->id
+                && $event->billable->getKey() === $this->company->id
                 && $event->plan->id === $this->plan->id
                 && $event->trialEndsAt !== null;
         });
@@ -67,7 +67,7 @@ class EventDispatchTest extends BaseTestCase
 
         Event::assertDispatched(SubscriptionCreated::class, function (SubscriptionCreated $event) {
             return $event->trialEndsAt === null
-                && $event->billable->id === $this->company->id
+                && $event->billable->getKey() === $this->company->id
                 && $event->plan->slug === 'standard';
         });
     }
@@ -81,7 +81,7 @@ class EventDispatchTest extends BaseTestCase
 
         Event::assertDispatched(SubscriptionPaused::class, function (SubscriptionPaused $event) use ($subscription) {
             return $event->subscription->id === $subscription->id
-                && $event->billable->id === $this->company->id
+                && $event->billable->getKey() === $this->company->id
                 && $event->plan->id === $this->plan->id;
         });
     }
@@ -95,7 +95,7 @@ class EventDispatchTest extends BaseTestCase
 
         Event::assertDispatched(SubscriptionResumed::class, function (SubscriptionResumed $event) use ($subscription) {
             return $event->subscription->id === $subscription->id
-                && $event->billable->id === $this->company->id
+                && $event->billable->getKey() === $this->company->id
                 && $event->plan->id === $this->plan->id;
         });
     }
@@ -111,7 +111,7 @@ class EventDispatchTest extends BaseTestCase
 
         Event::assertDispatched(InvoiceGenerated::class, function (InvoiceGenerated $event) use ($invoice) {
             return $event->invoice->id === $invoice->id
-                && $event->billable->id === $this->company->id
+                && $event->billable->getKey() === $this->company->id
                 && $event->invoiceNumber === $invoice->number
                 && $event->total === $invoice->total
                 && $event->currency === $invoice->currency

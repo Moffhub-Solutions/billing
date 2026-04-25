@@ -38,7 +38,7 @@ class InvoiceModelTest extends BaseTestCase
             'tax_rate' => 16.0,
         ]);
 
-        $this->assertNotNull($invoice->id);
+        $this->assertGreaterThan(0, $invoice->id);
         $this->assertEquals('INV-001', $invoice->number);
         $this->assertEquals(116000, $invoice->total);
     }
@@ -65,7 +65,9 @@ class InvoiceModelTest extends BaseTestCase
         ]);
 
         $this->assertCount(1, $invoice->items);
-        $this->assertEquals('Starter Plan - Monthly', $invoice->items->first()->description);
+        $first = $invoice->items->first();
+        $this->assertNotNull($first);
+        $this->assertEquals('Starter Plan - Monthly', $first->description);
     }
 
     public function test_invoice_has_payments(): void

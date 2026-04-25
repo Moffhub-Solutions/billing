@@ -139,7 +139,9 @@ class PaymentTokenApiTest extends BaseTestCase
             ->assertJsonPath('data.is_default', true);
 
         // Previous default should be unset
-        $this->assertFalse($firstToken->fresh()->is_default);
+        $freshFirsttoken = $firstToken->fresh();
+        $this->assertNotNull($freshFirsttoken);
+        $this->assertFalse($freshFirsttoken->is_default);
     }
 
     public function test_store_token_validation(): void
@@ -163,8 +165,12 @@ class PaymentTokenApiTest extends BaseTestCase
             ->assertJsonPath('message', 'Default payment method updated.')
             ->assertJsonPath('data.is_default', true);
 
-        $this->assertFalse($token1->fresh()->is_default);
-        $this->assertTrue($token2->fresh()->is_default);
+        $freshToken1 = $token1->fresh();
+        $this->assertNotNull($freshToken1);
+        $this->assertFalse($freshToken1->is_default);
+        $freshToken2 = $token2->fresh();
+        $this->assertNotNull($freshToken2);
+        $this->assertTrue($freshToken2->is_default);
     }
 
     public function test_set_default_unsets_previous(): void
@@ -175,9 +181,15 @@ class PaymentTokenApiTest extends BaseTestCase
 
         $this->actingAs($this->user)->putJson("/api/billing/payment-methods/{$token3->id}/default");
 
-        $this->assertFalse($token1->fresh()->is_default);
-        $this->assertFalse($token2->fresh()->is_default);
-        $this->assertTrue($token3->fresh()->is_default);
+        $freshToken1 = $token1->fresh();
+        $this->assertNotNull($freshToken1);
+        $this->assertFalse($freshToken1->is_default);
+        $freshToken2 = $token2->fresh();
+        $this->assertNotNull($freshToken2);
+        $this->assertFalse($freshToken2->is_default);
+        $freshToken3 = $token3->fresh();
+        $this->assertNotNull($freshToken3);
+        $this->assertTrue($freshToken3->is_default);
     }
 
     // ─── Destroy Token ──────────────────────────────────────────────────
@@ -191,7 +203,7 @@ class PaymentTokenApiTest extends BaseTestCase
         $response->assertOk()
             ->assertJsonPath('message', 'Payment method removed.');
 
-        $this->assertDatabaseMissing(config('billing.tables.payment_tokens', 'billing_payment_tokens'), [
+        $this->assertDatabaseMissing(billing_table('payment_tokens', 'billing_payment_tokens'), [
             'id' => $token->id,
         ]);
     }
@@ -217,11 +229,16 @@ class PaymentTokenApiTest extends BaseTestCase
         $this->actingAs($this->user)->deleteJson("/api/billing/payment-methods/{$default->id}");
 
         // The most recently used token should be promoted
-        $this->assertTrue($next->fresh()->is_default);
+        $freshNext = $next->fresh();
+        $this->assertNotNull($freshNext);
+        $this->assertTrue($freshNext->is_default);
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────
 
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
     protected function createToken(array $attributes = []): PaymentToken
     {
         return $this->company->paymentTokens()->create(array_merge([

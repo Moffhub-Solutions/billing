@@ -45,7 +45,6 @@ class SubscriptionBuilderTest extends BaseTestCase
 
         $subscription = $this->company->subscribe('starter')->create();
 
-        $this->assertNotNull($subscription);
         $this->assertEquals($this->plan->id, $subscription->plan_id);
         $this->assertTrue($subscription->status === SubscriptionStatus::TRIALING);
         $this->assertNotNull($subscription->trial_ends_at);

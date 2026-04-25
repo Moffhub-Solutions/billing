@@ -18,6 +18,11 @@ use Moffhub\Billing\Traits\TracksUsage;
 
 // ─── Test models (defined here for isolation) ──────────────────────────
 
+/**
+ * @property int|null $company_id
+ * @property string|null $name
+ * @property-read Company|null $company
+ */
 class SimpleTrackedModel extends Model
 {
     use TracksUsage;
@@ -28,17 +33,25 @@ class SimpleTrackedModel extends Model
 
     protected static string $usageFeatureSlug = 'ocr_scanning';
 
+    /**
+     * @return BelongsTo<Company, $this>
+     */
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
     }
 
-    public function usageBillable(): ?Company
+    public function usageBillable(): ?Model
     {
         return $this->company;
     }
 }
 
+/**
+ * @property int|null $company_id
+ * @property string|null $name
+ * @property-read Company|null $company
+ */
 class PerOperationModel extends Model
 {
     use TracksUsage;
@@ -47,23 +60,34 @@ class PerOperationModel extends Model
 
     protected $guarded = [];
 
+    /**
+     * @var array<string, array<string, mixed>>
+     */
     protected static array $usageMap = [
         'created' => ['feature' => 'document_uploads', 'quantity' => 1],
         'updated' => ['feature' => 'document_edits', 'quantity' => 1],
         'deleted' => ['feature' => 'document_deletes', 'quantity' => 2],
     ];
 
+    /**
+     * @return BelongsTo<Company, $this>
+     */
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
     }
 
-    public function usageBillable(): ?Company
+    public function usageBillable(): ?Model
     {
         return $this->company;
     }
 }
 
+/**
+ * @property int|null $company_id
+ * @property string|null $type
+ * @property-read Company|null $company
+ */
 class DynamicTrackedModel extends Model
 {
     use TracksUsage;
@@ -72,18 +96,25 @@ class DynamicTrackedModel extends Model
 
     protected $guarded = [];
 
+    /** @var array<int, string> */
     protected static array $usageTrackOn = ['created'];
 
+    /**
+     * @return BelongsTo<Company, $this>
+     */
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
     }
 
-    public function usageBillable(): ?Company
+    public function usageBillable(): ?Model
     {
         return $this->company;
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
     public function resolveUsage(string $event): ?array
     {
         return match ($this->type) {
@@ -196,7 +227,8 @@ class TracksUsageTest extends BaseTestCase
 
         // Manually record the same event again using the service directly
         // (simulating a retry with the same transaction_id)
-        $transactionId = 'SimpleTrackedModel:'.$model->getKey().':created';
+        $key = $model->getKey();
+        $transactionId = 'SimpleTrackedModel:'.((is_int($key) || is_string($key)) ? $key : '').':created';
         app(UsageService::class)->record(
             billable: $this->company,
             featureSlug: 'ocr_scanning',

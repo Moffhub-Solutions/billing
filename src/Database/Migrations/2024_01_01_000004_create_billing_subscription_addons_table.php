@@ -10,10 +10,10 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create(config('billing.tables.subscription_addons', 'billing_subscription_addons'), function (Blueprint $table): void {
+        Schema::create(billing_table('subscription_addons', 'billing_subscription_addons'), function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('subscription_id')->constrained(config('billing.tables.subscriptions', 'billing_subscriptions'))->cascadeOnDelete();
-            $table->foreignId('feature_id')->constrained(config('billing.tables.features', 'billing_features'));
+            $table->foreignId('subscription_id')->constrained(billing_table('subscriptions', 'billing_subscriptions'))->cascadeOnDelete();
+            $table->foreignId('feature_id')->constrained(billing_table('features', 'billing_features'));
             $table->string('status')->default('active');
             $table->integer('price_override')->nullable();
             $table->timestamp('enabled_at')->nullable();
@@ -28,6 +28,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists(config('billing.tables.subscription_addons', 'billing_subscription_addons'));
+        Schema::dropIfExists(billing_table('subscription_addons', 'billing_subscription_addons'));
     }
 };

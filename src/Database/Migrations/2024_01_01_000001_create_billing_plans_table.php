@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create(config('billing.tables.plans', 'billing_plans'), function (Blueprint $table): void {
+        Schema::create(billing_table('plans', 'billing_plans'), function (Blueprint $table): void {
             $table->id();
             $table->ulid()->unique();
             $table->string('name');
@@ -33,6 +33,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists(config('billing.tables.plans', 'billing_plans'));
+        Schema::dropIfExists(billing_table('plans', 'billing_plans'));
     }
 };

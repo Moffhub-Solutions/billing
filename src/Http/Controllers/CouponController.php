@@ -6,14 +6,14 @@ namespace Moffhub\Billing\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
 use Illuminate\Support\Str;
 use Moffhub\Billing\Exceptions\CouponException;
 use Moffhub\Billing\Http\Resources\CouponResource;
 use Moffhub\Billing\Models\Coupon;
+use Moffhub\Billing\Models\PromotionCode;
 use Moffhub\Billing\Services\CouponService;
 
-class CouponController extends Controller
+class CouponController extends BillingController
 {
     public function __construct(
         protected CouponService $couponService,
@@ -108,10 +108,13 @@ class CouponController extends Controller
      */
     public function storePromotionCode(Request $request, int $coupon): JsonResponse
     {
-        $coupon = Coupon::findOrFail($coupon);
+        $couponModel = Coupon::query()->findOrFail($coupon);
+
+        $promoTableRaw = config('billing.tables.promotion_codes', 'billing_promotion_codes');
+        $promoTable = is_string($promoTableRaw) ? $promoTableRaw : 'billing_promotion_codes';
 
         $validated = $request->validate([
-            'code' => ['required', 'string', 'max:50', 'unique:'.config('billing.tables.promotion_codes', 'billing_promotion_codes').',code'],
+            'code' => ['required', 'string', 'max:50', 'unique:'.$promoTable.',code'],
             'first_time_transaction' => ['sometimes', 'boolean'],
             'minimum_amount' => ['nullable', 'integer', 'min:0'],
             'minimum_amount_currency' => ['nullable', 'string', 'size:3'],
@@ -120,19 +123,22 @@ class CouponController extends Controller
             'metadata' => ['sometimes', 'array'],
         ]);
 
-        $promoCode = $coupon->promotionCodes()->create([
-            'code' => strtoupper((string) $validated['code']),
+        $codeValue = $validated['code'] ?? '';
+
+        $promoCode = $couponModel->promotionCodes()->create([
+            'code' => strtoupper(is_string($codeValue) ? $codeValue : ''),
             'is_active' => true,
             ...$validated,
         ]);
 
+        /** @var PromotionCode $promoCode */
         return response()->json([
             'message' => 'Promotion code created.',
             'data' => [
                 'id' => $promoCode->id,
                 'code' => $promoCode->code,
-                'coupon' => $coupon->name,
-                'discount' => $coupon->discountDescription(),
+                'coupon' => $couponModel->name,
+                'discount' => $couponModel->discountDescription(),
                 'is_active' => true,
             ],
         ], 201);
@@ -155,7 +161,7 @@ class CouponController extends Controller
         }
 
         $result = $this->couponService->preview(
-            $request->input('code'),
+            $request->string('code')->toString(),
             $billable,
             $request->integer('amount'),
         );
@@ -181,13 +187,16 @@ class CouponController extends Controller
             return response()->json(['message' => 'No billable entity found.'], 404);
         }
 
+        $subscriptionIdRaw = $request->input('subscription_id');
+        $invoiceIdRaw = $request->input('invoice_id');
+
         try {
             $result = $this->couponService->applyCode(
-                $request->input('code'),
+                $request->string('code')->toString(),
                 $billable,
                 $request->integer('amount'),
-                $request->input('subscription_id'),
-                $request->input('invoice_id'),
+                is_numeric($subscriptionIdRaw) ? (int) $subscriptionIdRaw : null,
+                is_numeric($invoiceIdRaw) ? (int) $invoiceIdRaw : null,
             );
 
             return response()->json([
@@ -203,26 +212,5 @@ class CouponController extends Controller
         } catch (CouponException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
-    }
-
-    protected function resolveBillable(Request $request): mixed
-    {
-        $user = $request->user();
-
-        if ($user === null) {
-            return null;
-        }
-
-        if (method_exists($user, 'subscriptions')) {
-            return $user;
-        }
-
-        $billableRelation = config('billing.billable_relation', 'company');
-
-        if (method_exists($user, $billableRelation)) {
-            return $user->{$billableRelation};
-        }
-
-        return null;
     }
 }

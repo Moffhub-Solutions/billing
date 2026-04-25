@@ -5,13 +5,38 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Moffhub\Billing\Database\Factories\CouponFactory;
 use Moffhub\Billing\Enums\CouponDuration;
 use Moffhub\Billing\Enums\DiscountType;
 
+/**
+ * @property int $id
+ * @property string $ulid
+ * @property string $name
+ * @property DiscountType $discount_type
+ * @property int $discount_value
+ * @property string|null $currency
+ * @property CouponDuration|null $duration
+ * @property int|null $duration_in_months
+ * @property int|null $max_redemptions
+ * @property int $times_redeemed
+ * @property Carbon|null $redeem_by
+ * @property bool $is_active
+ * @property array<int, string>|null $applies_to_plans
+ * @property array<string, mixed>|null $metadata
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
+ * @property-read Collection<int, PromotionCode> $promotionCodes
+ * @property-read Collection<int, CouponRedemption> $redemptions
+ *
+ * @method static Builder<self> active()
+ * @method static Builder<self> redeemable()
+ */
 class Coupon extends Model
 {
     /** @use HasFactory<CouponFactory> */
@@ -44,14 +69,22 @@ class Coupon extends Model
     #[\Override]
     public function getTable(): string
     {
-        return config('billing.tables.coupons', 'billing_coupons');
+        $value = config('billing.tables.coupons', 'billing_coupons');
+
+        return is_string($value) ? $value : 'billing_coupons';
     }
 
+    /**
+     * @return HasMany<PromotionCode, $this>
+     */
     public function promotionCodes(): HasMany
     {
         return $this->hasMany(PromotionCode::class);
     }
 
+    /**
+     * @return HasMany<CouponRedemption, $this>
+     */
     public function redemptions(): HasMany
     {
         return $this->hasMany(CouponRedemption::class);
@@ -98,7 +131,6 @@ class Coupon extends Model
         return match ($this->discount_type) {
             DiscountType::PERCENT => (int) round($amount * ($this->discount_value / 100)),
             DiscountType::FIXED => min($this->discount_value, $amount),
-            default => 0,
         };
     }
 
@@ -107,10 +139,12 @@ class Coupon extends Model
      */
     public function discountDescription(): string
     {
+        $currency = config('billing.currency', 'KES');
+        $currencyString = is_string($currency) ? $currency : 'KES';
+
         return match ($this->discount_type) {
             DiscountType::PERCENT => "{$this->discount_value}% off",
-            DiscountType::FIXED => config('billing.currency', 'KES').' '.number_format($this->discount_value / 100, 2).' off',
-            default => 'Discount',
+            DiscountType::FIXED => $currencyString.' '.number_format($this->discount_value / 100, 2).' off',
         };
     }
 

@@ -5,12 +5,32 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Moffhub\Billing\Database\Factories\PromotionCodeFactory;
 
+/**
+ * @property int $id
+ * @property int $coupon_id
+ * @property string $code
+ * @property bool $is_active
+ * @property bool $first_time_transaction
+ * @property int|null $minimum_amount
+ * @property int|null $max_redemptions
+ * @property int $times_redeemed
+ * @property Carbon|null $expires_at
+ * @property array<string, mixed>|null $metadata
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
+ * @property-read Coupon $coupon
+ * @property-read Collection<int, CouponRedemption> $redemptions
+ *
+ * @method static Builder<self> active()
+ */
 class PromotionCode extends Model
 {
     /** @use HasFactory<PromotionCodeFactory> */
@@ -40,14 +60,22 @@ class PromotionCode extends Model
     #[\Override]
     public function getTable(): string
     {
-        return config('billing.tables.promotion_codes', 'billing_promotion_codes');
+        $value = config('billing.tables.promotion_codes', 'billing_promotion_codes');
+
+        return is_string($value) ? $value : 'billing_promotion_codes';
     }
 
+    /**
+     * @return BelongsTo<Coupon, $this>
+     */
     public function coupon(): BelongsTo
     {
         return $this->belongsTo(Coupon::class);
     }
 
+    /**
+     * @return HasMany<CouponRedemption, $this>
+     */
     public function redemptions(): HasMany
     {
         return $this->hasMany(CouponRedemption::class);
@@ -76,6 +104,8 @@ class PromotionCode extends Model
 
     /**
      * Validate restrictions against a billable and amount.
+     *
+     * @return array<int, string>
      */
     public function validateRestrictions(Model $billable, int $amount): array
     {
@@ -92,7 +122,9 @@ class PromotionCode extends Model
         }
 
         if ($this->minimum_amount !== null && $amount < $this->minimum_amount) {
-            $formatted = config('billing.currency', 'KES').' '.number_format($this->minimum_amount / 100, 2);
+            $currency = config('billing.currency', 'KES');
+            $currencyString = is_string($currency) ? $currency : 'KES';
+            $formatted = $currencyString.' '.number_format($this->minimum_amount / 100, 2);
             $errors[] = "Minimum purchase amount of {$formatted} required.";
         }
 

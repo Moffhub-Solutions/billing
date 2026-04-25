@@ -9,11 +9,14 @@ use Illuminate\Validation\Rule;
 
 class StorePlanRequest extends FormRequest
 {
+    /**
+     * @return array<string, mixed>
+     */
     public function rules(): array
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'slug' => ['required', 'string', 'max:255', Rule::unique(config('billing.tables.plans', 'billing_plans'), 'slug')],
+            'slug' => ['required', 'string', 'max:255', Rule::unique(billing_table('plans', 'billing_plans'), 'slug')],
             'description' => ['nullable', 'string', 'max:1000'],
             'base_price' => ['required', 'integer', 'min:0'],
             'currency' => ['sometimes', 'string', 'size:3'],

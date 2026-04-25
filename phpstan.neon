@@ -1,20 +1,10 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
 parameters:
     paths:
         - src/
         - tests/
-    level: 6
-    ignoreErrors:
-      - identifier: missingType.iterableValue
-      - identifier: missingType.generics
-      - identifier: method.notFound
-      - identifier: staticMethod.notFound
-      - identifier: argument.templateType
-      - identifier: staticProperty.notFound
-      - identifier: property.notFound
-      - identifier: nullsafe.neverNull
-      - identifier: return.type
-      - identifier: function.alreadyNarrowedType
-      - identifier: booleanAnd.rightAlwaysTrue
-      - identifier: method.protected
-      - identifier: method.alreadyNarrowedType
-      - identifier: assign.propertyType
+    excludePaths:
+        - src/Config/billing.php
+    level: 9

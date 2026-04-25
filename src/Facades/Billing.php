@@ -9,9 +9,9 @@ use Moffhub\Billing\Services\BillingService;
 
 /**
  * @method static \Moffhub\Billing\Services\BillingService forBillable(\Illuminate\Database\Eloquent\Model $billable)
- * @method static \Illuminate\Database\Eloquent\Collection plans()
+ * @method static \Illuminate\Database\Eloquent\Collection<int, \Moffhub\Billing\Models\Plan> plans()
  * @method static \Moffhub\Billing\Models\Plan|null plan(string $slug)
- * @method static \Illuminate\Database\Eloquent\Collection features()
+ * @method static \Illuminate\Database\Eloquent\Collection<int, \Moffhub\Billing\Models\Feature> features()
  *
  * @see BillingService
  */

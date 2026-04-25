@@ -43,8 +43,8 @@ class PesapalProvider extends BasePaymentProvider
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
     {
-        $email = $options['email'] ?? null;
-        $phone = $options['phone'] ?? null;
+        $email = $this->optionNullableString($options, 'email');
+        $phone = $this->optionNullableString($options, 'phone');
 
         if ($email === null && $phone === null) {
             return [
@@ -57,28 +57,28 @@ class PesapalProvider extends BasePaymentProvider
         }
 
         return $this->submitOrder(
-            merchantReference: $options['merchant_reference'] ?? uniqid('PSP-'),
+            merchantReference: $this->optionString($options, 'merchant_reference', uniqid('PSP-')),
             amount: $amount / 100, // convert cents to whole units
             currency: $currency,
-            description: $options['description'] ?? 'Payment',
-            callbackUrl: $options['callback_url'] ?? $this->callbackUrl,
+            description: $this->optionString($options, 'description', 'Payment'),
+            callbackUrl: $this->optionString($options, 'callback_url', $this->callbackUrl),
             email: $email,
             phone: $phone,
-            firstName: $options['first_name'] ?? null,
-            lastName: $options['last_name'] ?? null,
+            firstName: $this->optionNullableString($options, 'first_name'),
+            lastName: $this->optionNullableString($options, 'last_name'),
         );
     }
 
     #[\Override]
     public function refund(string $providerPaymentId, ?int $amount = null, array $options = []): array
     {
-        $confirmationCode = $options['confirmation_code'] ?? $providerPaymentId;
+        $confirmationCode = $this->optionString($options, 'confirmation_code', $providerPaymentId);
 
         return $this->refundRequest(
             confirmationCode: $confirmationCode,
             amount: $amount !== null ? $amount / 100 : 0,
-            username: $options['username'] ?? '',
-            remarks: $options['remarks'] ?? 'Refund',
+            username: $this->optionString($options, 'username'),
+            remarks: $this->optionString($options, 'remarks', 'Refund'),
         );
     }
 
@@ -101,20 +101,23 @@ class PesapalProvider extends BasePaymentProvider
         // Pesapal IPN sends OrderTrackingId — verify it exists
         $trackingId = $request->input('OrderTrackingId');
 
-        return $trackingId !== null && $trackingId !== '';
+        return is_string($trackingId) && $trackingId !== '';
     }
 
     #[\Override]
     public function parseWebhook(Request $request): array
     {
-        $trackingId = $request->input('OrderTrackingId');
+        $trackingIdRaw = $request->input('OrderTrackingId');
+        $trackingId = is_string($trackingIdRaw) ? $trackingIdRaw : null;
         $merchantRef = $request->input('OrderMerchantReference');
         $notificationType = $request->input('OrderNotificationType');
 
         // IPN doesn't include status — must query the transaction
-        $status = $trackingId ? $this->getTransactionStatus($trackingId) : [];
+        $status = $trackingId !== null ? $this->getTransactionStatus($trackingId) : [];
 
         $statusCode = $status['status_code'] ?? 0;
+        $amountValue = $status['amount'] ?? null;
+        $amount = is_numeric($amountValue) ? (int) ($amountValue * 100) : null;
 
         return [
             'event' => match ($statusCode) {
@@ -130,8 +133,8 @@ class PesapalProvider extends BasePaymentProvider
                 3 => 'refunded',
                 default => 'pending',
             },
-            'amount' => isset($status['amount']) ? (int) ($status['amount'] * 100) : null,
-            'currency' => $status['currency'] ?? null,
+            'amount' => $amount,
+            'currency' => isset($status['currency']) && is_string($status['currency']) ? $status['currency'] : null,
             'metadata' => [
                 'merchant_reference' => $merchantRef,
                 'notification_type' => $notificationType,
@@ -146,7 +149,7 @@ class PesapalProvider extends BasePaymentProvider
     #[\Override]
     public function isConfigured(): bool
     {
-        return ! empty($this->consumerKey) && ! empty($this->consumerSecret);
+        return $this->consumerKey !== '' && $this->consumerSecret !== '';
     }
 
     #[\Override]
@@ -161,20 +164,26 @@ class PesapalProvider extends BasePaymentProvider
     {
         $cacheKey = 'billing:pesapal:access_token:'.$this->consumerKey;
 
-        return Cache::remember($cacheKey, 240, function (): string {
+        $token = Cache::remember($cacheKey, 240, function (): string {
             $response = Http::post($this->baseUrl.'/api/Auth/RequestToken', [
                 'consumer_key' => $this->consumerKey,
                 'consumer_secret' => $this->consumerSecret,
             ]);
 
-            return $response->json('token') ?? '';
+            $value = $response->json('token');
+
+            return is_string($value) ? $value : '';
         });
+
+        return $token;
     }
 
     // ─── IPN Registration ──────────────────────────────────────────────
 
     /**
      * Register an IPN URL with Pesapal. Call once and store the ipn_id.
+     *
+     * @return array<string, mixed>
      */
     public function registerIpnUrl(string $url, string $notificationType = 'GET'): array
     {
@@ -186,10 +195,12 @@ class PesapalProvider extends BasePaymentProvider
                 'ipn_notification_type' => $notificationType,
             ]);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
+        /** @var array<string, mixed> $data */
+        $ipnId = $data['ipn_id'] ?? null;
 
-        if (isset($data['ipn_id'])) {
-            $this->ipnId = $data['ipn_id'];
+        if (is_string($ipnId)) {
+            $this->ipnId = $ipnId;
         }
 
         return $data;
@@ -197,6 +208,9 @@ class PesapalProvider extends BasePaymentProvider
 
     // ─── Submit Order ──────────────────────────────────────────────────
 
+    /**
+     * @return array{success: bool, provider_payment_id: string|null, provider_reference: string|null, status: string, metadata: array<string, mixed>}
+     */
     public function submitOrder(
         string $merchantReference,
         float $amount,
@@ -231,14 +245,15 @@ class PesapalProvider extends BasePaymentProvider
         $response = Http::withToken($token)
             ->post($this->baseUrl.'/api/Transactions/SubmitOrderRequest', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
-        $success = isset($data['order_tracking_id']) && $data['error'] === null;
+        $orderTrackingId = $data['order_tracking_id'] ?? null;
+        $success = is_string($orderTrackingId) && $orderTrackingId !== '' && ($data['error'] ?? null) === null;
 
         return [
             'success' => $success,
-            'provider_payment_id' => $data['order_tracking_id'] ?? null,
-            'provider_reference' => $data['merchant_reference'] ?? null,
+            'provider_payment_id' => is_string($orderTrackingId) ? $orderTrackingId : null,
+            'provider_reference' => isset($data['merchant_reference']) && is_string($data['merchant_reference']) ? $data['merchant_reference'] : null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => [
                 'redirect_url' => $data['redirect_url'] ?? null,
@@ -249,6 +264,9 @@ class PesapalProvider extends BasePaymentProvider
 
     // ─── Transaction Status ────────────────────────────────────────────
 
+    /**
+     * @return array<string, mixed>
+     */
     public function getTransactionStatus(string $orderTrackingId): array
     {
         $token = $this->getAccessToken();
@@ -258,11 +276,14 @@ class PesapalProvider extends BasePaymentProvider
                 'orderTrackingId' => $orderTrackingId,
             ]);
 
-        return $response->json() ?? [];
+        return $this->asArray($response->json());
     }
 
     // ─── Refund ────────────────────────────────────────────────────────
 
+    /**
+     * @return array{success: bool, provider_refund_id: string|null, status: string, metadata: array<string, mixed>}
+     */
     public function refundRequest(
         string $confirmationCode,
         float $amount,
@@ -279,8 +300,9 @@ class PesapalProvider extends BasePaymentProvider
                 'remarks' => $remarks,
             ]);
 
-        $data = $response->json() ?? [];
-        $success = ($data['status'] ?? 0) === 200 || ($data['status'] ?? '') === '200';
+        $data = $this->asArray($response->json());
+        $statusValue = $data['status'] ?? 0;
+        $success = $statusValue === 200 || $statusValue === '200';
 
         return [
             'success' => $success,

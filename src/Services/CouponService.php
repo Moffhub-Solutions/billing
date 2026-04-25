@@ -9,6 +9,7 @@ use Moffhub\Billing\Exceptions\CouponException;
 use Moffhub\Billing\Models\Coupon;
 use Moffhub\Billing\Models\CouponRedemption;
 use Moffhub\Billing\Models\PromotionCode;
+use Moffhub\Billing\Models\Subscription;
 
 class CouponService
 {
@@ -44,10 +45,10 @@ class CouponService
         $coupon = $promoCode->coupon;
 
         // Check plan restrictions
-        if ($subscriptionId !== null) {
+        if ($subscriptionId !== null && method_exists($billable, 'subscriptions')) {
             $subscription = $billable->subscriptions()->find($subscriptionId);
 
-            if ($subscription && ! $coupon->appliesToPlan($subscription->plan->slug)) {
+            if ($subscription instanceof Subscription && ! $coupon->appliesToPlan($subscription->plan->slug)) {
                 throw CouponException::notApplicableToPlan($subscription->plan->name);
             }
         }
@@ -83,6 +84,8 @@ class CouponService
 
     /**
      * Apply a coupon directly (without promotion code).
+     *
+     * @return array{discount_amount: int, final_amount: int, coupon: Coupon, promotion_code: PromotionCode|null}
      */
     public function applyCoupon(
         Coupon $coupon,
@@ -122,6 +125,8 @@ class CouponService
 
     /**
      * Preview what a code would discount (without redeeming).
+     *
+     * @return array<string, mixed>
      */
     public function preview(string $code, Model $billable, int $amount): array
     {

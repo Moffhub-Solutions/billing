@@ -90,7 +90,9 @@ class PesapalProviderTest extends BaseTestCase
     {
         $result = $this->provider->charge(750000, 'KES', []);
         $this->assertFalse($result['success']);
-        $this->assertStringContainsString('Email or phone', $result['metadata']['error']);
+        $error = $result['metadata']['error'] ?? null;
+        $this->assertIsString($error);
+        $this->assertStringContainsString('Email or phone', $error);
     }
 
     public function test_charge_with_email(): void

@@ -9,6 +9,9 @@ use Illuminate\Validation\Rule;
 
 class UpdatePlanRequest extends FormRequest
 {
+    /**
+     * @return array<string, mixed>
+     */
     public function rules(): array
     {
         return [

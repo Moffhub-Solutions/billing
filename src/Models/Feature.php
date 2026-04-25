@@ -26,6 +26,9 @@ use Moffhub\Billing\Enums\FeatureType;
  * @property array<string, mixed>|null $metadata
  * @property Carbon $created_at
  * @property Carbon $updated_at
+ *
+ * @method static Builder<self> active()
+ * @method static Builder<self> addons()
  */
 class Feature extends Model
 {
@@ -55,7 +58,9 @@ class Feature extends Model
     #[\Override]
     public function getTable(): string
     {
-        return config('billing.tables.features', 'billing_features');
+        $value = config('billing.tables.features', 'billing_features');
+
+        return is_string($value) ? $value : 'billing_features';
     }
 
     /**

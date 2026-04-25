@@ -6,7 +6,6 @@ namespace Moffhub\Billing\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
 use Moffhub\Billing\Events\PlanChanged;
 use Moffhub\Billing\Events\SubscriptionCancelled;
 use Moffhub\Billing\Http\Requests\ChangeSubscriptionPlanRequest;
@@ -17,7 +16,7 @@ use Moffhub\Billing\Models\Subscription;
 use Moffhub\Billing\Services\FeatureResolver;
 use Moffhub\Billing\Services\ProrationCalculator;
 
-class SubscriptionController extends Controller
+class SubscriptionController extends BillingController
 {
     /**
      * List subscriptions for the authenticated billable.
@@ -92,11 +91,11 @@ class SubscriptionController extends Controller
      */
     public function show(int $subscription): JsonResponse
     {
-        $subscription = Subscription::with('plan', 'addons.feature')
+        $subscriptionModel = Subscription::query()->with('plan', 'addons.feature')
             ->findOrFail($subscription);
 
         return response()->json([
-            'data' => new SubscriptionResource($subscription),
+            'data' => new SubscriptionResource($subscriptionModel),
         ]);
     }
 
@@ -118,18 +117,27 @@ class SubscriptionController extends Controller
             ], 422);
         }
 
-        $builder = $billable->subscribe($request->input('plan'));
+        $builder = $billable->subscribe($request->string('plan')->toString());
 
         if ($request->filled('trial_days')) {
             $builder->trialDays($request->integer('trial_days'));
         }
 
         if ($request->filled('payment_provider')) {
-            $builder->provider($request->input('payment_provider'));
+            $builder->provider($request->string('payment_provider')->toString());
         }
 
         if ($request->filled('metadata')) {
-            $builder->withMetadata($request->input('metadata'));
+            $metadataRaw = $request->input('metadata');
+            if (is_array($metadataRaw)) {
+                $metadata = [];
+                foreach ($metadataRaw as $k => $v) {
+                    if (is_string($k)) {
+                        $metadata[$k] = $v;
+                    }
+                }
+                $builder->withMetadata($metadata);
+            }
         }
 
         $subscription = $builder->create();
@@ -146,10 +154,10 @@ class SubscriptionController extends Controller
      */
     public function changePlan(ChangeSubscriptionPlanRequest $request, int $subscription): JsonResponse
     {
-        $subscription = Subscription::with('plan')->findOrFail($subscription);
+        $subscriptionModel = Subscription::query()->with('plan')->findOrFail($subscription);
 
-        $oldPlan = $subscription->plan;
-        $newPlan = Plan::where('slug', $request->input('plan'))->firstOrFail();
+        $oldPlan = $subscriptionModel->plan;
+        $newPlan = Plan::query()->where('slug', $request->input('plan'))->firstOrFail();
 
         if ($oldPlan->id === $newPlan->id) {
             return response()->json([
@@ -157,27 +165,34 @@ class SubscriptionController extends Controller
             ], 422);
         }
 
-        $subscription->update([
+        $subscriptionModel->update([
             'plan_id' => $newPlan->id,
         ]);
 
         // Clear feature cache
-        $billable = $subscription->billable;
+        $billable = $subscriptionModel->billable;
         app(FeatureResolver::class)->clearCache($billable);
 
-        $proration = app(ProrationCalculator::class)->calculate($subscription, $newPlan);
+        $proration = app(ProrationCalculator::class)->calculate($subscriptionModel, $newPlan);
 
-        PlanChanged::dispatch(
-            $subscription->fresh(),
-            $billable,
-            $oldPlan,
-            $newPlan,
-            $proration['net'],
-        );
+        $fresh = $subscriptionModel->fresh();
+
+        if ($fresh !== null) {
+            PlanChanged::dispatch(
+                $fresh,
+                $billable,
+                $oldPlan,
+                $newPlan,
+                $proration['net'],
+            );
+        }
+
+        $reloaded = $subscriptionModel->fresh();
+        $loaded = $reloaded !== null ? $reloaded->load('plan') : $subscriptionModel;
 
         return response()->json([
             'message' => "Plan changed from {$oldPlan->name} to {$newPlan->name}.",
-            'data' => new SubscriptionResource($subscription->fresh()->load('plan')),
+            'data' => new SubscriptionResource($loaded),
         ]);
     }
 
@@ -186,29 +201,36 @@ class SubscriptionController extends Controller
      */
     public function cancel(Request $request, int $subscription): JsonResponse
     {
-        $subscription = Subscription::findOrFail($subscription);
+        $subscriptionModel = Subscription::query()->findOrFail($subscription);
 
         $immediately = $request->boolean('immediately', false);
-        $subscription->cancel($immediately);
+        $subscriptionModel->cancel($immediately);
 
-        $subscription->load('plan', 'billable');
+        $subscriptionModel->load('plan', 'billable');
 
-        SubscriptionCancelled::dispatch(
-            $subscription,
-            $subscription->billable,
-            $subscription->plan,
-            $subscription->cancelled_at,
-            $immediately ? null : $subscription->current_period_end,
-            $immediately,
-        );
+        $cancelledAt = $subscriptionModel->cancelled_at;
+
+        if ($cancelledAt !== null) {
+            SubscriptionCancelled::dispatch(
+                $subscriptionModel,
+                $subscriptionModel->billable,
+                $subscriptionModel->plan,
+                $cancelledAt,
+                $immediately ? null : $subscriptionModel->current_period_end,
+                $immediately,
+            );
+        }
 
         $message = $immediately
             ? 'Subscription cancelled immediately.'
             : 'Subscription will be cancelled at the end of the billing period.';
 
+        $reloaded = $subscriptionModel->fresh();
+        $loaded = $reloaded !== null ? $reloaded->load('plan') : $subscriptionModel;
+
         return response()->json([
             'message' => $message,
-            'data' => new SubscriptionResource($subscription->fresh()->load('plan')),
+            'data' => new SubscriptionResource($loaded),
         ]);
     }
 
@@ -221,12 +243,15 @@ class SubscriptionController extends Controller
             return response()->json(['message' => 'Pausing subscriptions is not enabled.'], 422);
         }
 
-        $subscription = Subscription::findOrFail($subscription);
-        $subscription->pause();
+        $subscriptionModel = Subscription::query()->findOrFail($subscription);
+        $subscriptionModel->pause();
+
+        $reloaded = $subscriptionModel->fresh();
+        $loaded = $reloaded !== null ? $reloaded->load('plan') : $subscriptionModel;
 
         return response()->json([
             'message' => 'Subscription paused.',
-            'data' => new SubscriptionResource($subscription->fresh()->load('plan')),
+            'data' => new SubscriptionResource($loaded),
         ]);
     }
 
@@ -235,36 +260,15 @@ class SubscriptionController extends Controller
      */
     public function resume(int $subscription): JsonResponse
     {
-        $subscription = Subscription::findOrFail($subscription);
-        $subscription->resume();
+        $subscriptionModel = Subscription::query()->findOrFail($subscription);
+        $subscriptionModel->resume();
+
+        $reloaded = $subscriptionModel->fresh();
+        $loaded = $reloaded !== null ? $reloaded->load('plan') : $subscriptionModel;
 
         return response()->json([
             'message' => 'Subscription resumed.',
-            'data' => new SubscriptionResource($subscription->fresh()->load('plan')),
+            'data' => new SubscriptionResource($loaded),
         ]);
-    }
-
-    /**
-     * Resolve the billable entity from the request.
-     */
-    protected function resolveBillable(Request $request): mixed
-    {
-        $user = $request->user();
-
-        if ($user === null) {
-            return null;
-        }
-
-        if (method_exists($user, 'subscriptions')) {
-            return $user;
-        }
-
-        $billableRelation = config('billing.billable_relation', 'company');
-
-        if (method_exists($user, $billableRelation)) {
-            return $user->{$billableRelation};
-        }
-
-        return null;
     }
 }

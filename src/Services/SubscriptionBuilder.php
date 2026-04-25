@@ -19,6 +19,9 @@ class SubscriptionBuilder
 
     protected ?string $providerSubscriptionId = null;
 
+    /**
+     * @var array<string, mixed>
+     */
     protected array $metadata = [];
 
     public function __construct(
@@ -49,6 +52,8 @@ class SubscriptionBuilder
 
     /**
      * Set metadata on the subscription.
+     *
+     * @param  array<string, mixed>  $metadata
      */
     public function withMetadata(array $metadata): self
     {
@@ -62,7 +67,7 @@ class SubscriptionBuilder
      */
     public function create(): Subscription
     {
-        $plan = Plan::where('slug', $this->planSlug)
+        $plan = Plan::query()->where('slug', $this->planSlug)
             ->where('is_active', true)
             ->firstOrFail();
 
@@ -81,7 +86,7 @@ class SubscriptionBuilder
             'metadata' => $this->metadata ?: null,
         ]);
 
-        $this->billable->subscriptions()->save($subscription);
+        $this->billable->morphMany(Subscription::class, 'billable')->save($subscription);
 
         SubscriptionCreated::dispatch(
             $subscription,

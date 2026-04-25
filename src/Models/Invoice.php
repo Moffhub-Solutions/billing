@@ -38,6 +38,9 @@ use Moffhub\Billing\Enums\InvoiceStatus;
  * @property-read Subscription|null $subscription
  * @property-read Collection<int, InvoiceItem> $items
  * @property-read Collection<int, Payment> $payments
+ *
+ * @method static Builder<self> creditNotes()
+ * @method static Builder<self> regularInvoices()
  */
 class Invoice extends Model
 {
@@ -69,24 +72,38 @@ class Invoice extends Model
     #[\Override]
     public function getTable(): string
     {
-        return config('billing.tables.invoices', 'billing_invoices');
+        $value = config('billing.tables.invoices', 'billing_invoices');
+
+        return is_string($value) ? $value : 'billing_invoices';
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function billable(): MorphTo
     {
         return $this->morphTo();
     }
 
+    /**
+     * @return BelongsTo<Subscription, $this>
+     */
     public function subscription(): BelongsTo
     {
         return $this->belongsTo(Subscription::class);
     }
 
+    /**
+     * @return HasMany<InvoiceItem, $this>
+     */
     public function items(): HasMany
     {
         return $this->hasMany(InvoiceItem::class);
     }
 
+    /**
+     * @return HasMany<Payment, $this>
+     */
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
@@ -101,7 +118,7 @@ class Invoice extends Model
     {
         return $this->status !== InvoiceStatus::PAID
             && $this->status !== InvoiceStatus::VOID
-            && $this->due_date?->isPast();
+            && ($this->due_date?->isPast() ?? false);
     }
 
     /**
@@ -109,7 +126,7 @@ class Invoice extends Model
      */
     public function outstandingBalance(): int
     {
-        $paid = $this->payments()
+        $paid = (int) $this->payments()
             ->where('status', 'completed')
             ->sum('amount');
 
@@ -143,7 +160,13 @@ class Invoice extends Model
             return null;
         }
 
-        return self::find($metadata['original_invoice_id']);
+        $originalId = $metadata['original_invoice_id'];
+
+        if (! is_int($originalId) && ! is_string($originalId)) {
+            return null;
+        }
+
+        return self::find($originalId);
     }
 
     /**

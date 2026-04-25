@@ -15,9 +15,13 @@ class FeatureResolver implements FeatureResolverInterface
      */
     public function hasFeature(Model $billable, string $featureSlug): bool
     {
-        $ttl = config('billing.features.cache_ttl', 300);
-        $prefix = config('billing.features.cache_prefix', 'billing_features');
-        $cacheKey = "{$prefix}:{$billable->getMorphClass()}:{$billable->getKey()}:{$featureSlug}";
+        $ttlRaw = config('billing.features.cache_ttl', 300);
+        $ttl = is_numeric($ttlRaw) ? (int) $ttlRaw : 300;
+        $prefix = $this->cachePrefix();
+
+        $billableKey = $billable->getKey();
+        $key = (is_string($billableKey) || is_int($billableKey)) ? (string) $billableKey : '';
+        $cacheKey = "{$prefix}:{$billable->getMorphClass()}:{$key}:{$featureSlug}";
 
         if ($ttl > 0) {
             return Cache::remember($cacheKey, $ttl, fn (): bool => $this->resolveFeature($billable, $featureSlug));
@@ -47,7 +51,7 @@ class FeatureResolver implements FeatureResolverInterface
     /**
      * Get all available feature slugs for the billable.
      *
-     * @return array<string>
+     * @return array<int, string>
      */
     public function getAvailableFeatures(Model $billable): array
     {
@@ -68,9 +72,18 @@ class FeatureResolver implements FeatureResolverInterface
             ->with('feature')
             ->get()
             ->pluck('feature.slug')
-            ->toArray();
+            ->all();
 
-        return array_unique(array_merge($planFeatures, $addonFeatures));
+        $merged = array_values(array_unique(array_merge($planFeatures, $addonFeatures)));
+
+        $strings = [];
+        foreach ($merged as $value) {
+            if (is_string($value)) {
+                $strings[] = $value;
+            }
+        }
+
+        return $strings;
     }
 
     /**
@@ -78,13 +91,15 @@ class FeatureResolver implements FeatureResolverInterface
      */
     public function clearCache(Model $billable): void
     {
-        $prefix = config('billing.features.cache_prefix', 'billing_features');
+        $prefix = $this->cachePrefix();
+        $billableKey = $billable->getKey();
+        $key = (is_string($billableKey) || is_int($billableKey)) ? (string) $billableKey : '';
 
         // Clear all feature caches for this billable
         $features = $this->getAvailableFeatures($billable);
 
         foreach ($features as $feature) {
-            Cache::forget("{$prefix}:{$billable->getMorphClass()}:{$billable->getKey()}:{$feature}");
+            Cache::forget("{$prefix}:{$billable->getMorphClass()}:{$key}:{$feature}");
         }
     }
 
@@ -94,7 +109,7 @@ class FeatureResolver implements FeatureResolverInterface
     protected function resolveFeature(Model $billable, string $featureSlug): bool
     {
         // Admin bypass
-        if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin()) {
+        if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin() === true) {
             return true;
         }
 
@@ -109,5 +124,12 @@ class FeatureResolver implements FeatureResolverInterface
         }
 
         return $subscription->hasFeature($featureSlug);
+    }
+
+    private function cachePrefix(): string
+    {
+        $prefix = config('billing.features.cache_prefix', 'billing_features');
+
+        return is_string($prefix) ? $prefix : 'billing_features';
     }
 }

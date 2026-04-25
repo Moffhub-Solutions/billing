@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Services;
 
 use Illuminate\Database\Eloquent\Model;
+use Moffhub\Billing\Contracts\BillableInterface;
+use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Models\Plan;
-use Moffhub\Billing\Models\Subscription;
 use Moffhub\Billing\PaymentManager;
 
 class UssdMenuBuilder
@@ -56,7 +57,8 @@ class UssdMenuBuilder
      */
     public function mainMenu(): array
     {
-        $companyName = config('billing.invoices.company_name', 'Billing');
+        $companyNameRaw = config('billing.invoices.company_name', 'Billing');
+        $companyName = is_string($companyNameRaw) ? $companyNameRaw : 'Billing';
 
         return [
             'response' => "Welcome to {$companyName} Billing\n1. My Account\n2. Make Payment\n3. Check Usage\n4. Change Plan",
@@ -70,9 +72,8 @@ class UssdMenuBuilder
      * @param  array<int, string>  $parts
      * @return array{response: string, is_terminal: bool}
      */
-    protected function handleMyAccount(Model $billable, array $parts): array
+    protected function handleMyAccount(Model&BillableInterface $billable, array $parts): array
     {
-        /** @var Subscription|null $subscription */
         $subscription = $billable->subscription();
 
         if ($subscription === null) {
@@ -99,7 +100,7 @@ class UssdMenuBuilder
      * @param  array<int, string>  $parts
      * @return array{response: string, is_terminal: bool}
      */
-    protected function handleMakePayment(string $sessionId, Model $billable, array $parts): array
+    protected function handleMakePayment(string $sessionId, Model&BillableInterface $billable, array $parts): array
     {
         // Step 1: Ask for amount
         if (count($parts) === 1) {
@@ -159,10 +160,11 @@ class UssdMenuBuilder
      *
      * @return array{response: string, is_terminal: bool}
      */
-    protected function processPayment(string $sessionId, Model $billable): array
+    protected function processPayment(string $sessionId, Model&BillableInterface $billable): array
     {
         $session = $this->sessionManager->get($sessionId);
-        $amountCents = $session['amount_cents'] ?? 0;
+        $amountCentsRaw = $session['amount_cents'] ?? 0;
+        $amountCents = is_numeric($amountCentsRaw) ? (int) $amountCentsRaw : 0;
 
         if ($amountCents <= 0) {
             return [
@@ -173,7 +175,11 @@ class UssdMenuBuilder
 
         try {
             $provider = $this->paymentManager->driver('mpesa');
-            $currency = (string) config('billing.currency', 'KES');
+            if (! $provider instanceof PaymentProviderInterface) {
+                throw new \RuntimeException('mpesa driver did not resolve to PaymentProviderInterface.');
+            }
+            $currencyRaw = config('billing.currency', 'KES');
+            $currency = is_string($currencyRaw) ? $currencyRaw : 'KES';
 
             $result = $provider->charge($amountCents, $currency, [
                 'phone' => $this->getBillablePhone($billable),
@@ -212,9 +218,8 @@ class UssdMenuBuilder
      *
      * @return array{response: string, is_terminal: bool}
      */
-    protected function handleCheckUsage(Model $billable): array
+    protected function handleCheckUsage(Model&BillableInterface $billable): array
     {
-        /** @var Subscription|null $subscription */
         $subscription = $billable->subscription();
 
         if ($subscription === null) {
@@ -237,11 +242,12 @@ class UssdMenuBuilder
         $lines = [];
 
         foreach ($limits as $feature => $limit) {
-            $usage = $billable->usage($feature);
-            $limit = (int) $limit;
-            $percentage = $limit > 0 ? (int) round(($usage / $limit) * 100) : 0;
-            $label = str_replace('_', ' ', ucfirst($feature));
-            $lines[] = "{$label}: {$usage}/{$limit} ({$percentage}%)";
+            $featureSlug = (string) $feature;
+            $usage = $billable->usage($featureSlug);
+            $limitInt = (int) $limit;
+            $percentage = $limitInt > 0 ? (int) round(($usage / $limitInt) * 100) : 0;
+            $label = str_replace('_', ' ', ucfirst($featureSlug));
+            $lines[] = "{$label}: {$usage}/{$limitInt} ({$percentage}%)";
         }
 
         return [
@@ -256,7 +262,7 @@ class UssdMenuBuilder
      * @param  array<int, string>  $parts
      * @return array{response: string, is_terminal: bool}
      */
-    protected function handleChangePlan(string $sessionId, Model $billable, array $parts): array
+    protected function handleChangePlan(string $sessionId, Model&BillableInterface $billable, array $parts): array
     {
         // Step 1: Show available plans
         if (count($parts) === 1) {
@@ -275,7 +281,14 @@ class UssdMenuBuilder
                 ];
             }
 
-            $selectedPlan = $plans[$planIndex - 1];
+            $selectedPlan = $plans->get($planIndex - 1);
+
+            if ($selectedPlan === null) {
+                return [
+                    'response' => 'Invalid plan selection.',
+                    'is_terminal' => true,
+                ];
+            }
 
             $this->sessionManager->put($sessionId, [
                 'action' => 'change_plan',
@@ -317,7 +330,7 @@ class UssdMenuBuilder
      *
      * @return array{response: string, is_terminal: bool}
      */
-    protected function showPlanList(Model $billable): array
+    protected function showPlanList(Model&BillableInterface $billable): array
     {
         $plans = Plan::active()->ordered()->get();
 
@@ -333,7 +346,8 @@ class UssdMenuBuilder
 
         $lines = [];
 
-        foreach ($plans as $index => $plan) {
+        $index = 0;
+        foreach ($plans as $plan) {
             $number = $index + 1;
             $price = self::formatMoney($plan->base_price);
             $cycle = strtolower($plan->billing_cycle->label());
@@ -345,6 +359,7 @@ class UssdMenuBuilder
             };
             $current = $plan->id === $currentPlanId ? ' (current)' : '';
             $lines[] = "{$number}. {$plan->name} - {$price}/{$shortCycle}{$current}";
+            $index++;
         }
 
         return [
@@ -358,12 +373,12 @@ class UssdMenuBuilder
      *
      * @return array{response: string, is_terminal: bool}
      */
-    protected function processChangePlan(string $sessionId, Model $billable): array
+    protected function processChangePlan(string $sessionId, Model&BillableInterface $billable): array
     {
         $session = $this->sessionManager->get($sessionId);
         $planId = $session['plan_id'] ?? null;
 
-        if ($planId === null) {
+        if (! is_int($planId) && ! is_string($planId)) {
             return [
                 'response' => 'Session expired. Please try again.',
                 'is_terminal' => true,
@@ -405,22 +420,35 @@ class UssdMenuBuilder
 
     /**
      * Resolve the billable entity by phone number.
+     *
+     * @return (Model&BillableInterface)|null
      */
-    public function resolveBillable(string $phoneNumber): ?Model
+    public function resolveBillable(string $phoneNumber): ?BillableInterface
     {
-        $modelClass = (string) config('billing.billable_model', 'App\\Models\\Company');
-        $phoneField = (string) config('billing.ussd.phone_field', 'phone');
+        $modelClassRaw = config('billing.billable_model', 'App\\Models\\Company');
+        $modelClass = is_string($modelClassRaw) ? $modelClassRaw : 'App\\Models\\Company';
+        $phoneFieldRaw = config('billing.ussd.phone_field', 'phone');
+        $phoneField = is_string($phoneFieldRaw) ? $phoneFieldRaw : 'phone';
 
         if (! class_exists($modelClass)) {
             return null;
         }
 
-        /** @var Model $model */
         $model = new $modelClass;
 
-        return $model->newQuery()
+        if (! $model instanceof Model) {
+            return null;
+        }
+
+        $resolved = $model->newQuery()
             ->where($phoneField, $phoneNumber)
             ->first();
+
+        if ($resolved instanceof Model && $resolved instanceof BillableInterface) {
+            return $resolved;
+        }
+
+        return null;
     }
 
     /**
@@ -428,15 +456,18 @@ class UssdMenuBuilder
      */
     protected function getBillablePhone(Model $billable): string
     {
-        $phoneField = (string) config('billing.ussd.phone_field', 'phone');
+        $phoneFieldRaw = config('billing.ussd.phone_field', 'phone');
+        $phoneField = is_string($phoneFieldRaw) ? $phoneFieldRaw : 'phone';
 
-        return (string) $billable->getAttribute($phoneField);
+        $value = $billable->getAttribute($phoneField);
+
+        return is_string($value) ? $value : (is_int($value) ? (string) $value : '');
     }
 
     /**
      * Get the outstanding balance for a billable (sum of pending payments in cents).
      */
-    protected function getOutstandingBalance(Model $billable): int
+    protected function getOutstandingBalance(Model&BillableInterface $billable): int
     {
         return (int) $billable->payments()
             ->where('status', 'pending')
@@ -448,7 +479,8 @@ class UssdMenuBuilder
      */
     public static function formatMoney(int $cents): string
     {
-        $currency = (string) config('billing.currency', 'KES');
+        $currencyRaw = config('billing.currency', 'KES');
+        $currency = is_string($currencyRaw) ? $currencyRaw : 'KES';
 
         return $currency.' '.number_format($cents / 100, 2);
     }

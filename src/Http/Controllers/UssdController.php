@@ -24,10 +24,10 @@ class UssdController extends Controller
      */
     public function handle(Request $request): Response
     {
-        $sessionId = (string) $request->input('sessionId', '');
-        $phoneNumber = (string) $request->input('phoneNumber', '');
-        $serviceCode = (string) $request->input('serviceCode', '');
-        $text = (string) $request->input('text', '');
+        $sessionId = $request->string('sessionId', '')->toString();
+        $phoneNumber = $request->string('phoneNumber', '')->toString();
+        $serviceCode = $request->string('serviceCode', '')->toString();
+        $text = $request->string('text', '')->toString();
 
         Log::debug('USSD request received', [
             'session_id' => $sessionId,

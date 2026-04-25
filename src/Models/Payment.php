@@ -33,7 +33,7 @@ use Moffhub\Billing\Enums\PaymentStatus;
  * @property Carbon|null $refunded_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
- * @property-read Model $billable
+ * @property-read Model|null $billable
  * @property-read Subscription|null $subscription
  * @property-read Invoice|null $invoice
  */
@@ -66,19 +66,30 @@ class Payment extends Model
     #[\Override]
     public function getTable(): string
     {
-        return config('billing.tables.payments', 'billing_payments');
+        $value = config('billing.tables.payments', 'billing_payments');
+
+        return is_string($value) ? $value : 'billing_payments';
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function billable(): MorphTo
     {
         return $this->morphTo();
     }
 
+    /**
+     * @return BelongsTo<Subscription, $this>
+     */
     public function subscription(): BelongsTo
     {
         return $this->belongsTo(Subscription::class);
     }
 
+    /**
+     * @return BelongsTo<Invoice, $this>
+     */
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class);

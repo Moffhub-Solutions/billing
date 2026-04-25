@@ -13,6 +13,10 @@ class FieldEncryptor
     /**
      * Encrypt specified fields in a data array.
      * Supports dot notation for nested fields (e.g., 'card.number').
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<int, string>|null  $fields
+     * @return array<string, mixed>
      */
     public function encrypt(array $data, ?array $fields = null): array
     {
@@ -40,6 +44,10 @@ class FieldEncryptor
      * Decrypt specified fields in a data array.
      * Gracefully falls back to the original value if decryption fails
      * (supports migrating from unencrypted to encrypted data).
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<int, string>|null  $fields
+     * @return array<string, mixed>
      */
     public function decrypt(array $data, ?array $fields = null): array
     {
@@ -53,7 +61,13 @@ class FieldEncryptor
             }
 
             try {
-                $decrypted = is_string($value) ? Crypt::decryptString($value) : Crypt::decrypt((string) $value);
+                if (is_string($value)) {
+                    $decrypted = Crypt::decryptString($value);
+                } elseif (is_int($value) || is_float($value) || is_bool($value)) {
+                    $decrypted = Crypt::decrypt((string) $value);
+                } else {
+                    continue;
+                }
                 Arr::set($data, $field, $decrypted);
             } catch (\Throwable) {
                 // Value is likely not encrypted (migration period) — keep as-is
@@ -86,22 +100,42 @@ class FieldEncryptor
      */
     public function hash(string $value): string
     {
-        return hash('sha256', $value.config('app.key'));
+        $appKeyRaw = config('app.key');
+        $appKey = is_string($appKeyRaw) ? $appKeyRaw : '';
+
+        return hash('sha256', $value.$appKey);
     }
 
     /**
      * Scrub sensitive keys from data before logging.
+     *
+     * @param  array<array-key, mixed>  $data
+     * @return array<array-key, mixed>
      */
     public function scrubForLogging(array $data): array
     {
-        $scrubKeys = config('billing.security.scrub_keys', [
+        $scrubKeysRaw = config('billing.security.scrub_keys', [
             'token', 'secret', 'password', 'api_key', 'consumer_secret',
             'auth_token', 'passkey', 'card_number', 'cvv', 'pin',
         ]);
 
+        $scrubKeys = [];
+        if (is_array($scrubKeysRaw)) {
+            foreach ($scrubKeysRaw as $key) {
+                if (is_string($key)) {
+                    $scrubKeys[] = $key;
+                }
+            }
+        }
+
         return $this->recursiveScrub($data, $scrubKeys);
     }
 
+    /**
+     * @param  array<array-key, mixed>  $data
+     * @param  array<int, string>  $scrubKeys
+     * @return array<array-key, mixed>
+     */
     protected function recursiveScrub(array $data, array $scrubKeys): array
     {
         foreach ($data as $key => $value) {
@@ -121,11 +155,11 @@ class FieldEncryptor
     }
 
     /**
-     * @return array<string>
+     * @return array<int, string>
      */
     public function getEncryptedFields(): array
     {
-        return config('billing.security.encrypted_fields', [
+        $valueRaw = config('billing.security.encrypted_fields', [
             'phone',
             'email',
             'card_exp_month',
@@ -133,5 +167,18 @@ class FieldEncryptor
             'token',
             'bank_name',
         ]);
+
+        if (! is_array($valueRaw)) {
+            return [];
+        }
+
+        $strings = [];
+        foreach ($valueRaw as $value) {
+            if (is_string($value)) {
+                $strings[] = $value;
+            }
+        }
+
+        return $strings;
     }
 }

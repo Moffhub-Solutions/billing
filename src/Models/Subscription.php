@@ -40,6 +40,8 @@ use Moffhub\Billing\Events\SubscriptionResumed;
  * @property-read Collection<int, SubscriptionAddon> $addons
  * @property-read Collection<int, Payment> $payments
  * @property-read Collection<int, Invoice> $invoices
+ *
+ * @method static Builder<self> active()
  */
 class Subscription extends Model
 {
@@ -71,29 +73,46 @@ class Subscription extends Model
     #[\Override]
     public function getTable(): string
     {
-        return config('billing.tables.subscriptions', 'billing_subscriptions');
+        $value = config('billing.tables.subscriptions', 'billing_subscriptions');
+
+        return is_string($value) ? $value : 'billing_subscriptions';
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function billable(): MorphTo
     {
         return $this->morphTo();
     }
 
+    /**
+     * @return BelongsTo<Plan, $this>
+     */
     public function plan(): BelongsTo
     {
         return $this->belongsTo(Plan::class);
     }
 
+    /**
+     * @return HasMany<SubscriptionAddon, $this>
+     */
     public function addons(): HasMany
     {
         return $this->hasMany(SubscriptionAddon::class);
     }
 
+    /**
+     * @return HasMany<Payment, $this>
+     */
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
     }
 
+    /**
+     * @return HasMany<Invoice, $this>
+     */
     public function invoices(): HasMany
     {
         return $this->hasMany(Invoice::class);
@@ -117,7 +136,7 @@ class Subscription extends Model
     public function onTrial(): bool
     {
         return $this->status === SubscriptionStatus::TRIALING
-            && $this->trial_ends_at?->isFuture();
+            && ($this->trial_ends_at?->isFuture() ?? false);
     }
 
     /**
@@ -150,7 +169,7 @@ class Subscription extends Model
     public function onGracePeriod(): bool
     {
         return $this->cancelled_at !== null
-            && $this->current_period_end?->isFuture();
+            && ($this->current_period_end?->isFuture() ?? false);
     }
 
     /**
@@ -198,12 +217,15 @@ class Subscription extends Model
 
         $this->load('plan', 'billable');
 
-        SubscriptionPaused::dispatch(
-            $this,
-            $this->billable,
-            $this->plan,
-            $this->paused_at,
-        );
+        $pausedAt = $this->paused_at;
+        if ($pausedAt !== null) {
+            SubscriptionPaused::dispatch(
+                $this,
+                $this->billable,
+                $this->plan,
+                $pausedAt,
+            );
+        }
 
         return $this;
     }
@@ -221,12 +243,15 @@ class Subscription extends Model
 
         $this->load('plan', 'billable');
 
-        SubscriptionResumed::dispatch(
-            $this,
-            $this->billable,
-            $this->plan,
-            $this->resumed_at,
-        );
+        $resumedAt = $this->resumed_at;
+        if ($resumedAt !== null) {
+            SubscriptionResumed::dispatch(
+                $this,
+                $this->billable,
+                $this->plan,
+                $resumedAt,
+            );
+        }
 
         return $this;
     }

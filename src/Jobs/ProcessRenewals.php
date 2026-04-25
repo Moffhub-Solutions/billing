@@ -11,6 +11,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Enums\SubscriptionStatus;
 use Moffhub\Billing\Events\PaymentFailed;
@@ -30,7 +31,8 @@ class ProcessRenewals implements ShouldQueue
         // `status = ACTIVE` until the period ends. Without the cancelled_at
         // filter, this job would happily charge a customer who explicitly
         // cancelled — see `Subscription::onGracePeriod()`.
-        $subscriptions = Subscription::where('status', SubscriptionStatus::ACTIVE)
+        $subscriptions = Subscription::query()
+            ->where('status', SubscriptionStatus::ACTIVE)
             ->whereNull('cancelled_at')
             ->where('current_period_end', '<=', now())
             ->with(['plan', 'billable'])
@@ -45,11 +47,15 @@ class ProcessRenewals implements ShouldQueue
     {
         $plan = $subscription->plan;
         $provider = $subscription->payment_provider ?? $paymentManager->getDefaultDriver();
-        $currency = config('billing.currency', 'KES');
+        $currencyRaw = config('billing.currency', 'KES');
+        $currency = is_string($currencyRaw) ? $currencyRaw : 'KES';
         $amount = $this->renewalAmount($subscription);
 
         try {
             $driver = $paymentManager->driver($provider);
+            if (! $driver instanceof PaymentProviderInterface) {
+                throw new \RuntimeException("driver({$provider}) did not resolve to PaymentProviderInterface.");
+            }
             $result = $driver->charge($amount, $currency, [
                 'subscription_id' => $subscription->id,
                 'description' => "Renewal for {$plan->name}",
@@ -73,17 +79,21 @@ class ProcessRenewals implements ShouldQueue
                     'provider_payment_id' => $result['provider_payment_id'] ?? null,
                     'provider_reference' => $result['provider_reference'] ?? null,
                     'paid_at' => now(),
-                    'metadata' => $result['metadata'] ?? null,
+                    'metadata' => $result['metadata'],
                 ]);
 
-                $subscription->billable->payments()->save($payment);
+                $billable = $subscription->billable;
+                $billable->morphMany(Payment::class, 'billable')->save($payment);
+
+                $periodStart = $subscription->current_period_start ?? now();
+                $periodEnd = $subscription->current_period_end ?? now();
 
                 SubscriptionRenewed::dispatch(
                     $subscription,
                     $subscription->billable,
                     $plan,
-                    $subscription->current_period_start,
-                    $subscription->current_period_end,
+                    $periodStart,
+                    $periodEnd,
                     $amount,
                     $currency,
                 );
@@ -113,15 +123,23 @@ class ProcessRenewals implements ShouldQueue
      */
     protected function renewalAmount(Subscription $subscription): int
     {
-        $override = $subscription->metadata['amount'] ?? null;
+        $metadata = $subscription->metadata ?? [];
+        $override = $metadata['amount'] ?? null;
 
-        if (is_int($override) || (is_numeric($override) && (int) $override == $override)) {
+        if (is_int($override)) {
+            return $override;
+        }
+
+        if (is_numeric($override) && (int) $override == $override) {
             return (int) $override;
         }
 
-        return (int) $subscription->plan->base_price;
+        return $subscription->plan->base_price;
     }
 
+    /**
+     * @param  array<string, mixed>  $result
+     */
     protected function handleFailure(Subscription $subscription, string $provider, string $currency, int $amount, array $result): void
     {
         $subscription->update([
@@ -136,10 +154,11 @@ class ProcessRenewals implements ShouldQueue
             'status' => PaymentStatus::FAILED,
             'payment_provider' => $provider,
             'failed_at' => now(),
-            'metadata' => $result['metadata'] ?? null,
+            'metadata' => $result['metadata'],
         ]);
 
-        $subscription->billable->payments()->save($payment);
+        $billable = $subscription->billable;
+        $billable->morphMany(Payment::class, 'billable')->save($payment);
 
         PaymentFailed::dispatch(
             $payment,
@@ -158,7 +177,7 @@ class ProcessRenewals implements ShouldQueue
         $usageService = app(UsageService::class);
 
         foreach (array_keys($limits) as $featureSlug) {
-            $usageService->resetUsage($billable, $featureSlug);
+            $usageService->resetUsage($billable, (string) $featureSlug);
         }
     }
 }

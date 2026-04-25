@@ -42,29 +42,32 @@ class StanbicProvider extends BasePaymentProvider
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
     {
-        $reference = $options['reference'] ?? 'PAY-'.uniqid();
-        $paymentMethod = $options['payment_method'] ?? 'stk_push'; // stk_push, mobile_money, bank_transfer
+        $reference = $this->optionString($options, 'reference', 'PAY-'.uniqid());
+        $paymentMethod = $this->optionString($options, 'payment_method', 'stk_push'); // stk_push, mobile_money, bank_transfer
 
         $payload = [
             'merchant_code' => $this->merchantCode,
             'reference' => $reference,
             'amount' => (int) ceil($amount / 100),
-            'currency' => $currency ?: 'KES',
+            'currency' => $currency !== '' ? $currency : 'KES',
             'payment_method' => $paymentMethod,
-            'callback_url' => $options['callback_url'] ?? $this->callbackUrl,
-            'description' => $options['description'] ?? 'Payment',
+            'callback_url' => $this->optionString($options, 'callback_url', $this->callbackUrl),
+            'description' => $this->optionString($options, 'description', 'Payment'),
         ];
 
-        if (isset($options['phone'])) {
-            $payload['phone_number'] = $this->formatPhone($options['phone']);
+        $phone = $this->optionNullableString($options, 'phone');
+        if ($phone !== null) {
+            $payload['phone_number'] = $this->formatPhone($phone);
         }
 
-        if (isset($options['account_number'])) {
-            $payload['account_number'] = $options['account_number'];
+        $accountNumber = $this->optionNullableString($options, 'account_number');
+        if ($accountNumber !== null) {
+            $payload['account_number'] = $accountNumber;
         }
 
-        if (isset($options['bank_code'])) {
-            $payload['bank_code'] = $options['bank_code'];
+        $bankCode = $this->optionNullableString($options, 'bank_code');
+        if ($bankCode !== null) {
+            $payload['bank_code'] = $bankCode;
         }
 
         $endpoint = match ($paymentMethod) {
@@ -81,14 +84,14 @@ class StanbicProvider extends BasePaymentProvider
             'X-Api-Secret' => $this->apiSecret,
         ])->post($this->baseUrl.$endpoint, $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         $success = ($data['status'] ?? '') === 'success' || ($data['response_code'] ?? '') === '00';
 
         return [
             'success' => $success,
-            'provider_payment_id' => $data['transaction_id'] ?? null,
-            'provider_reference' => $data['reference'] ?? $reference,
+            'provider_payment_id' => isset($data['transaction_id']) && is_string($data['transaction_id']) ? $data['transaction_id'] : null,
+            'provider_reference' => isset($data['reference']) && is_string($data['reference']) ? $data['reference'] : $reference,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -101,12 +104,13 @@ class StanbicProvider extends BasePaymentProvider
             'merchant_code' => $this->merchantCode,
             'transaction_id' => $providerPaymentId,
             'amount' => $amount !== null ? (int) ceil($amount / 100) : null,
-            'reason' => $options['reason'] ?? 'Refund',
-            'callback_url' => $options['callback_url'] ?? $this->callbackUrl,
+            'reason' => $this->optionString($options, 'reason', 'Refund'),
+            'callback_url' => $this->optionString($options, 'callback_url', $this->callbackUrl),
         ];
 
-        if (isset($options['phone'])) {
-            $payload['phone_number'] = $this->formatPhone($options['phone']);
+        $phone = $this->optionNullableString($options, 'phone');
+        if ($phone !== null) {
+            $payload['phone_number'] = $this->formatPhone($phone);
         }
 
         $this->logRequest('POST', $this->baseUrl.'/payments/refund', $payload);
@@ -116,13 +120,15 @@ class StanbicProvider extends BasePaymentProvider
             'X-Api-Secret' => $this->apiSecret,
         ])->post($this->baseUrl.'/payments/refund', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
         $success = ($data['status'] ?? '') === 'success' || ($data['response_code'] ?? '') === '00';
 
+        $providerRefundId = $data['refund_id'] ?? $data['transaction_id'] ?? null;
+
         return [
             'success' => $success,
-            'provider_refund_id' => $data['refund_id'] ?? $data['transaction_id'] ?? null,
+            'provider_refund_id' => is_string($providerRefundId) ? $providerRefundId : null,
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -136,7 +142,7 @@ class StanbicProvider extends BasePaymentProvider
             'X-Api-Secret' => $this->apiSecret,
         ])->get($this->baseUrl.'/payments/status/'.$providerPaymentId);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
         $status = $data['transaction_status'] ?? $data['status'] ?? null;
 
         return match ($status) {
@@ -150,7 +156,7 @@ class StanbicProvider extends BasePaymentProvider
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        $signature = $request->header('X-Stanbic-Signature', '');
+        $signature = (string) $request->header('X-Stanbic-Signature', '');
         $payload = $request->getContent();
         $expected = hash_hmac('sha256', $payload, $this->apiSecret);
 
@@ -164,14 +170,17 @@ class StanbicProvider extends BasePaymentProvider
         $status = $data['transaction_status'] ?? $data['status'] ?? 'unknown';
         $success = in_array($status, ['completed', 'success', '00'], true);
 
-        $amount = isset($data['amount']) ? (int) ((float) $data['amount'] * 100) : null;
+        $amountValue = $data['amount'] ?? null;
+        $amount = is_numeric($amountValue) ? (int) ((float) $amountValue * 100) : null;
+
+        $providerPaymentId = $data['transaction_id'] ?? null;
 
         return [
             'event' => $success ? 'payment.completed' : 'payment.failed',
-            'provider_payment_id' => $data['transaction_id'] ?? null,
+            'provider_payment_id' => is_string($providerPaymentId) ? $providerPaymentId : null,
             'status' => $success ? 'completed' : 'failed',
             'amount' => $amount,
-            'currency' => $data['currency'] ?? 'KES',
+            'currency' => isset($data['currency']) && is_string($data['currency']) ? $data['currency'] : 'KES',
             'metadata' => [
                 'reference' => $data['reference'] ?? null,
                 'payment_method' => $data['payment_method'] ?? null,
@@ -185,7 +194,7 @@ class StanbicProvider extends BasePaymentProvider
     #[\Override]
     public function isConfigured(): bool
     {
-        return ! empty($this->apiKey) && ! empty($this->apiSecret);
+        return $this->apiKey !== '' && $this->apiSecret !== '';
     }
 
     #[\Override]
@@ -205,7 +214,8 @@ class StanbicProvider extends BasePaymentProvider
 
     protected function formatPhone(string $phone): string
     {
-        $phone = preg_replace('/[^0-9]/', '', $phone) ?? $phone;
+        $cleaned = preg_replace('/[^0-9]/', '', $phone);
+        $phone = is_string($cleaned) ? $cleaned : $phone;
 
         if (str_starts_with($phone, '0')) {
             $phone = '254'.substr($phone, 1);

@@ -52,9 +52,13 @@ class BillingHealthCommand extends Command
 
         $this->newLine();
         $this->info('Configuration:');
-        $this->line('  Currency: '.config('billing.currency', 'KES'));
-        $this->line('  Feature cache TTL: '.config('billing.features.cache_ttl', 300).'s');
-        $this->line('  Grace period: '.config('billing.subscriptions.grace_period_days', 7).' days');
+        $currencyRaw = config('billing.currency', 'KES');
+        $cacheTtlRaw = config('billing.features.cache_ttl', 300);
+        $graceRaw = config('billing.subscriptions.grace_period_days', 7);
+
+        $this->line('  Currency: '.(is_string($currencyRaw) ? $currencyRaw : 'KES'));
+        $this->line('  Feature cache TTL: '.(is_numeric($cacheTtlRaw) ? (int) $cacheTtlRaw : 300).'s');
+        $this->line('  Grace period: '.(is_numeric($graceRaw) ? (int) $graceRaw : 7).' days');
         $this->line('  Webhooks: '.(config('billing.webhooks.enabled') ? 'enabled' : 'disabled'));
 
         return self::SUCCESS;

@@ -6,16 +6,24 @@ namespace Moffhub\Billing\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Moffhub\Billing\Models\Coupon;
+use Moffhub\Billing\Models\PromotionCode;
 
+/**
+ * @mixin Coupon
+ */
 class CouponResource extends JsonResource
 {
+    /**
+     * @return array<string, mixed>
+     */
     #[\Override]
     public function toArray(Request $request): array
     {
         return [
             'id' => $this->ulid,
             'name' => $this->name,
-            'discount_type' => $this->discount_type?->value,
+            'discount_type' => $this->discount_type->value,
             'discount_value' => $this->discount_value,
             'description' => $this->discountDescription(),
             'currency' => $this->currency,
@@ -28,7 +36,7 @@ class CouponResource extends JsonResource
             'is_active' => $this->is_active,
             'is_redeemable' => $this->isRedeemable(),
             'applies_to_plans' => $this->applies_to_plans,
-            'promotion_codes' => $this->whenLoaded('promotionCodes', fn () => $this->promotionCodes->map(fn ($code): array => [
+            'promotion_codes' => $this->whenLoaded('promotionCodes', fn () => $this->promotionCodes->map(fn (PromotionCode $code): array => [
                 'id' => $code->id,
                 'code' => $code->code,
                 'is_active' => $code->is_active,
@@ -39,7 +47,7 @@ class CouponResource extends JsonResource
                 'expires_at' => $code->expires_at?->toIso8601ZuluString(),
             ])),
             'metadata' => $this->when($this->metadata !== null, $this->metadata),
-            'created_at' => $this->created_at?->toIso8601ZuluString(),
+            'created_at' => $this->created_at->toIso8601ZuluString(),
         ];
     }
 }

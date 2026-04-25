@@ -47,7 +47,7 @@ class AirtelMoneyProvider extends BasePaymentProvider
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
     {
-        $phone = $options['phone'] ?? null;
+        $phone = $this->optionNullableString($options, 'phone');
 
         if ($phone === null) {
             return [
@@ -59,20 +59,22 @@ class AirtelMoneyProvider extends BasePaymentProvider
             ];
         }
 
-        $reference = $options['reference'] ?? 'PAY-'.uniqid();
+        $reference = $this->optionString($options, 'reference', 'PAY-'.uniqid());
+        $country = $this->optionString($options, 'country', $this->country);
+        $effectiveCurrency = $currency !== '' ? $currency : $this->currency;
         $token = $this->getAccessToken();
 
         $payload = [
             'reference' => $reference,
             'subscriber' => [
-                'country' => $options['country'] ?? $this->country,
-                'currency' => $currency ?: $this->currency,
+                'country' => $country,
+                'currency' => $effectiveCurrency,
                 'msisdn' => $this->formatPhone($phone),
             ],
             'transaction' => [
                 'amount' => (int) ceil($amount / 100),
-                'country' => $options['country'] ?? $this->country,
-                'currency' => $currency ?: $this->currency,
+                'country' => $country,
+                'currency' => $effectiveCurrency,
                 'id' => $reference,
             ],
         ];
@@ -80,18 +82,20 @@ class AirtelMoneyProvider extends BasePaymentProvider
         $this->logRequest('POST', $this->baseUrl.'/merchant/v2/payments/', $payload);
 
         $response = Http::withToken($token)
-            ->withHeaders(['X-Country' => $options['country'] ?? $this->country])
+            ->withHeaders(['X-Country' => $country])
             ->post($this->baseUrl.'/merchant/v2/payments/', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
-        $statusCode = $data['status']['code'] ?? null;
+        $statusCode = $this->jsonString($response, 'status.code', '');
         $success = $statusCode === 'DP00800001001' || $statusCode === '200';
+
+        $providerPaymentId = $this->jsonNullableString($response, 'data.transaction.id') ?? $reference;
 
         return [
             'success' => $success,
-            'provider_payment_id' => $data['data']['transaction']['id'] ?? $reference,
-            'provider_reference' => $data['data']['transaction']['reference_id'] ?? null,
+            'provider_payment_id' => $providerPaymentId,
+            'provider_reference' => $this->jsonNullableString($response, 'data.transaction.reference_id'),
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -100,7 +104,7 @@ class AirtelMoneyProvider extends BasePaymentProvider
     #[\Override]
     public function refund(string $providerPaymentId, ?int $amount = null, array $options = []): array
     {
-        $phone = $options['phone'] ?? null;
+        $phone = $this->optionNullableString($options, 'phone');
 
         if ($phone === null) {
             return [
@@ -111,7 +115,7 @@ class AirtelMoneyProvider extends BasePaymentProvider
             ];
         }
 
-        $reference = $options['reference'] ?? 'REF-'.uniqid();
+        $reference = $this->optionString($options, 'reference', 'REF-'.uniqid());
         $token = $this->getAccessToken();
 
         $payload = [
@@ -120,7 +124,7 @@ class AirtelMoneyProvider extends BasePaymentProvider
                 'wallet_type' => 'NORMAL',
             ],
             'reference' => $reference,
-            'pin' => $options['pin'] ?? '',
+            'pin' => $this->optionString($options, 'pin'),
             'transaction' => [
                 'amount' => $amount !== null ? (int) ceil($amount / 100) : 0,
                 'id' => $reference,
@@ -134,14 +138,14 @@ class AirtelMoneyProvider extends BasePaymentProvider
             ->withHeaders(['X-Country' => $this->country])
             ->post($this->baseUrl.'/standard/v2/disbursements/', $payload);
 
-        $data = $response->json() ?? [];
+        $data = $this->asArray($response->json());
 
-        $statusCode = $data['status']['code'] ?? null;
+        $statusCode = $this->jsonString($response, 'status.code', '');
         $success = $statusCode === '200' || $statusCode === 'DP00800001001';
 
         return [
             'success' => $success,
-            'provider_refund_id' => $data['data']['transaction']['id'] ?? null,
+            'provider_refund_id' => $this->jsonNullableString($response, 'data.transaction.id'),
             'status' => $success ? 'pending' : 'failed',
             'metadata' => $data,
         ];
@@ -156,8 +160,7 @@ class AirtelMoneyProvider extends BasePaymentProvider
             ->withHeaders(['X-Country' => $this->country])
             ->get($this->baseUrl.'/standard/v2/payments/'.$providerPaymentId);
 
-        $data = $response->json() ?? [];
-        $status = $data['data']['transaction']['status'] ?? null;
+        $status = $this->jsonNullableString($response, 'data.transaction.status');
 
         return match ($status) {
             'TS' => 'completed',
@@ -172,24 +175,29 @@ class AirtelMoneyProvider extends BasePaymentProvider
     {
         $transaction = $request->input('transaction');
 
-        return $transaction !== null && isset($transaction['id']);
+        return is_array($transaction) && isset($transaction['id']);
     }
 
     #[\Override]
     public function parseWebhook(Request $request): array
     {
-        $transaction = $request->input('transaction', []);
-        $status = $transaction['status_code'] ?? $transaction['status'] ?? null;
+        $transactionRaw = $request->input('transaction', []);
+        $transaction = is_array($transactionRaw) ? $transactionRaw : [];
+
+        $statusCode = $transaction['status_code'] ?? null;
+        $statusValue = $transaction['status'] ?? null;
+        $status = $statusCode ?? $statusValue;
 
         $success = $status === 'TS' || $status === 'DP00800001001';
-        $amount = isset($transaction['amount']) ? (int) ((float) $transaction['amount'] * 100) : null;
+        $amountRaw = $transaction['amount'] ?? null;
+        $amount = is_numeric($amountRaw) ? (int) ((float) $amountRaw * 100) : null;
 
         return [
             'event' => $success ? 'payment.completed' : 'payment.failed',
-            'provider_payment_id' => $transaction['id'] ?? null,
+            'provider_payment_id' => isset($transaction['id']) && is_string($transaction['id']) ? $transaction['id'] : null,
             'status' => $success ? 'completed' : 'failed',
             'amount' => $amount,
-            'currency' => $transaction['currency'] ?? $this->currency,
+            'currency' => isset($transaction['currency']) && is_string($transaction['currency']) ? $transaction['currency'] : $this->currency,
             'metadata' => [
                 'airtel_money_id' => $transaction['airtel_money_id'] ?? null,
                 'message' => $transaction['message'] ?? null,
@@ -202,7 +210,7 @@ class AirtelMoneyProvider extends BasePaymentProvider
     #[\Override]
     public function isConfigured(): bool
     {
-        return ! empty($this->clientId) && ! empty($this->clientSecret);
+        return $this->clientId !== '' && $this->clientSecret !== '';
     }
 
     #[\Override]
@@ -217,15 +225,19 @@ class AirtelMoneyProvider extends BasePaymentProvider
     {
         $cacheKey = 'billing:airtel:access_token:'.$this->clientId;
 
-        return Cache::remember($cacheKey, 3300, function (): string {
+        $token = Cache::remember($cacheKey, 3300, function (): string {
             $response = Http::post($this->baseUrl.'/auth/oauth2/token', [
                 'client_id' => $this->clientId,
                 'client_secret' => $this->clientSecret,
                 'grant_type' => 'client_credentials',
             ]);
 
-            return $response->json('access_token') ?? '';
+            $token = $response->json('access_token');
+
+            return is_string($token) ? $token : '';
         });
+
+        return $token;
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────
@@ -239,7 +251,8 @@ class AirtelMoneyProvider extends BasePaymentProvider
 
     protected function formatPhone(string $phone): string
     {
-        $phone = preg_replace('/[^0-9]/', '', $phone) ?? $phone;
+        $cleaned = preg_replace('/[^0-9]/', '', $phone);
+        $phone = is_string($cleaned) ? $cleaned : $phone;
 
         // Remove country code prefix if present
         if (str_starts_with($phone, '254') && strlen($phone) === 12) {

@@ -19,7 +19,7 @@ class PaystackProvider extends BasePaymentProvider
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
     {
-        $email = $options['email'] ?? null;
+        $email = $this->optionNullableString($options, 'email');
 
         if ($email === null) {
             return [
@@ -32,8 +32,10 @@ class PaystackProvider extends BasePaymentProvider
         }
 
         // If authorization_code is provided, charge the saved card
-        if (isset($options['authorization_code'])) {
-            return $this->chargeAuthorization($email, $amount, $currency, $options['authorization_code'], $options);
+        $authCode = $this->optionNullableString($options, 'authorization_code');
+
+        if ($authCode !== null) {
+            return $this->chargeAuthorization($email, $amount, $currency, $authCode, $options);
         }
 
         // Otherwise, initialize a new transaction (returns redirect URL)
@@ -43,27 +45,33 @@ class PaystackProvider extends BasePaymentProvider
     #[\Override]
     public function refund(string $providerPaymentId, ?int $amount = null, array $options = []): array
     {
+        /** @var array<string, mixed> $payload */
         $payload = ['transaction' => $providerPaymentId];
 
         if ($amount !== null) {
             $payload['amount'] = $amount;
         }
 
-        if (isset($options['reason'])) {
-            $payload['merchant_note'] = $options['reason'];
+        $reason = $this->optionNullableString($options, 'reason');
+
+        if ($reason !== null) {
+            $payload['merchant_note'] = $reason;
         }
 
         $response = Http::withToken($this->secretKey)
             ->post($this->baseUrl.'/refund', $payload);
 
-        $data = $response->json();
-        $success = ($data['status'] ?? false) === true;
+        $data = $this->asArray($response->json());
+        $statusFlag = $data['status'] ?? false;
+        $success = $statusFlag === true;
+
+        $metadataData = isset($data['data']) && is_array($data['data']) ? $data['data'] : $data;
 
         return [
             'success' => $success,
-            'provider_refund_id' => $data['data']['transaction']['id'] ?? null,
+            'provider_refund_id' => $this->jsonNullableString($response, 'data.transaction.id'),
             'status' => $success ? 'pending' : 'failed',
-            'metadata' => $data['data'] ?? $data,
+            'metadata' => $metadataData,
         ];
     }
 
@@ -73,9 +81,7 @@ class PaystackProvider extends BasePaymentProvider
         $response = Http::withToken($this->secretKey)
             ->get($this->baseUrl.'/transaction/verify/'.$providerPaymentId);
 
-        $data = $response->json();
-
-        return match ($data['data']['status'] ?? 'unknown') {
+        return match ($this->jsonString($response, 'data.status', 'unknown')) {
             'success' => 'completed',
             'failed' => 'failed',
             'abandoned' => 'cancelled',
@@ -86,11 +92,11 @@ class PaystackProvider extends BasePaymentProvider
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        if (empty($this->webhookSecret)) {
+        if ($this->webhookSecret === '') {
             return false;
         }
 
-        $signature = $request->header('x-paystack-signature', '');
+        $signature = (string) $request->header('x-paystack-signature', '');
         $payload = $request->getContent();
         $expected = hash_hmac('sha512', $payload, $this->webhookSecret);
 
@@ -100,8 +106,11 @@ class PaystackProvider extends BasePaymentProvider
     #[\Override]
     public function parseWebhook(Request $request): array
     {
-        $event = $request->input('event', '');
-        $data = $request->input('data', []);
+        $eventRaw = $request->input('event', '');
+        $event = is_string($eventRaw) ? $eventRaw : '';
+
+        $dataRaw = $request->input('data', []);
+        $data = is_array($dataRaw) ? $dataRaw : [];
 
         $status = match ($event) {
             'charge.success' => 'completed',
@@ -117,10 +126,10 @@ class PaystackProvider extends BasePaymentProvider
                 'refund.processed' => 'payment.refunded',
                 default => $event,
             },
-            'provider_payment_id' => $data['reference'] ?? null,
+            'provider_payment_id' => isset($data['reference']) && is_string($data['reference']) ? $data['reference'] : null,
             'status' => $status,
-            'amount' => $data['amount'] ?? null, // Paystack amounts are already in kobo/cents
-            'currency' => $data['currency'] ?? null,
+            'amount' => isset($data['amount']) ? $this->asNullableInt($data['amount']) : null, // Paystack amounts are already in kobo/cents
+            'currency' => isset($data['currency']) && is_string($data['currency']) ? $data['currency'] : null,
             'metadata' => [
                 'paystack_event' => $event,
                 'channel' => $data['channel'] ?? null,
@@ -133,7 +142,7 @@ class PaystackProvider extends BasePaymentProvider
     #[\Override]
     public function isConfigured(): bool
     {
-        return ! empty($this->secretKey);
+        return $this->secretKey !== '';
     }
 
     #[\Override]
@@ -146,6 +155,9 @@ class PaystackProvider extends BasePaymentProvider
 
     /**
      * Initialize a transaction (returns a redirect URL for the customer).
+     *
+     * @param  array<string, mixed>  $options
+     * @return array{success: bool, provider_payment_id: string|null, provider_reference: string|null, status: string, metadata: array<string, mixed>}
      */
     public function initializeTransaction(string $email, int $amount, string $currency, array $options = []): array
     {
@@ -153,9 +165,9 @@ class PaystackProvider extends BasePaymentProvider
             'email' => $email,
             'amount' => $amount, // in kobo/cents
             'currency' => $currency,
-            'reference' => $options['reference'] ?? null,
-            'callback_url' => $options['callback_url'] ?? null,
-            'metadata' => $options['metadata'] ?? null,
+            'reference' => $this->optionNullableString($options, 'reference'),
+            'callback_url' => $this->optionNullableString($options, 'callback_url'),
+            'metadata' => $this->optionArray($options, 'metadata') ?: null,
         ];
 
         $this->logRequest('POST', $this->baseUrl.'/transaction/initialize', $payload);
@@ -163,23 +175,29 @@ class PaystackProvider extends BasePaymentProvider
         $response = Http::withToken($this->secretKey)
             ->post($this->baseUrl.'/transaction/initialize', array_filter($payload));
 
-        $data = $response->json();
-        $success = ($data['status'] ?? false) === true;
+        $data = $this->asArray($response->json());
+        $statusFlag = $data['status'] ?? false;
+        $success = $statusFlag === true;
+
+        $inner = isset($data['data']) && is_array($data['data']) ? $data['data'] : [];
 
         return [
             'success' => $success,
-            'provider_payment_id' => $data['data']['reference'] ?? null,
-            'provider_reference' => $data['data']['access_code'] ?? null,
+            'provider_payment_id' => $this->jsonNullableString($response, 'data.reference'),
+            'provider_reference' => $this->jsonNullableString($response, 'data.access_code'),
             'status' => $success ? 'pending' : 'failed',
             'metadata' => [
-                'authorization_url' => $data['data']['authorization_url'] ?? null,
-                ...$data['data'] ?? [],
+                'authorization_url' => $this->jsonNullableString($response, 'data.authorization_url'),
+                ...$inner,
             ],
         ];
     }
 
     /**
      * Charge a saved authorization (recurring payment).
+     *
+     * @param  array<string, mixed>  $options
+     * @return array{success: bool, provider_payment_id: string|null, provider_reference: string|null, status: string, metadata: array<string, mixed>}
      */
     public function chargeAuthorization(string $email, int $amount, string $currency, string $authorizationCode, array $options = []): array
     {
@@ -188,7 +206,7 @@ class PaystackProvider extends BasePaymentProvider
             'amount' => $amount,
             'currency' => $currency,
             'authorization_code' => $authorizationCode,
-            'reference' => $options['reference'] ?? null,
+            'reference' => $this->optionNullableString($options, 'reference'),
         ];
 
         $this->logRequest('POST', $this->baseUrl.'/transaction/charge_authorization', $payload);
@@ -196,15 +214,19 @@ class PaystackProvider extends BasePaymentProvider
         $response = Http::withToken($this->secretKey)
             ->post($this->baseUrl.'/transaction/charge_authorization', array_filter($payload));
 
-        $data = $response->json();
-        $success = ($data['status'] ?? false) === true && ($data['data']['status'] ?? '') === 'success';
+        $data = $this->asArray($response->json());
+        $statusFlag = $data['status'] ?? false;
+        $innerStatus = $this->jsonString($response, 'data.status', '');
+        $success = $statusFlag === true && $innerStatus === 'success';
+
+        $metadataData = isset($data['data']) && is_array($data['data']) ? $data['data'] : $data;
 
         return [
             'success' => $success,
-            'provider_payment_id' => $data['data']['reference'] ?? null,
-            'provider_reference' => $data['data']['id'] ?? null,
+            'provider_payment_id' => $this->jsonNullableString($response, 'data.reference'),
+            'provider_reference' => $this->jsonNullableString($response, 'data.id'),
             'status' => $success ? 'completed' : 'failed',
-            'metadata' => $data['data'] ?? $data,
+            'metadata' => $metadataData,
         ];
     }
 }

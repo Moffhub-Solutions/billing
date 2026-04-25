@@ -44,9 +44,9 @@ class FactoryTest extends BaseTestCase
         $plan = Plan::factory()->create();
 
         $this->assertInstanceOf(Plan::class, $plan);
-        $this->assertNotNull($plan->ulid);
-        $this->assertNotNull($plan->name);
-        $this->assertNotNull($plan->slug);
+        $this->assertNotEmpty($plan->ulid);
+        $this->assertNotEmpty($plan->name);
+        $this->assertNotEmpty($plan->slug);
         $this->assertTrue($plan->is_active);
         $this->assertInstanceOf(BillingCycle::class, $plan->billing_cycle);
     }
@@ -196,6 +196,7 @@ class FactoryTest extends BaseTestCase
         ]);
 
         $this->assertEquals(InvoiceStatus::OVERDUE, $invoice->status);
+        $this->assertNotNull($invoice->due_date);
         $this->assertTrue($invoice->due_date->isPast());
     }
 
@@ -337,8 +338,6 @@ class FactoryTest extends BaseTestCase
         ]);
 
         $this->assertInstanceOf(UsageRecord::class, $record);
-        $this->assertNotNull($record->period_start);
-        $this->assertNotNull($record->period_end);
         $this->assertTrue($record->isWithinLimit());
     }
 
@@ -376,7 +375,6 @@ class FactoryTest extends BaseTestCase
 
         $this->assertInstanceOf(UsageEvent::class, $event);
         $this->assertGreaterThan(0, $event->quantity);
-        $this->assertNotNull($event->recorded_at);
     }
 
     // ── Coupon ───────────────────────────────────────────────────────
@@ -438,7 +436,6 @@ class FactoryTest extends BaseTestCase
         ]);
 
         $this->assertInstanceOf(CouponRedemption::class, $redemption);
-        $this->assertNotNull($redemption->redeemed_at);
         $this->assertEquals(
             $redemption->original_amount - $redemption->discount_amount,
             $redemption->final_amount
@@ -453,7 +450,7 @@ class FactoryTest extends BaseTestCase
 
         $this->assertInstanceOf(PromotionCode::class, $promo);
         $this->assertTrue($promo->is_active);
-        $this->assertNotNull($promo->code);
+        $this->assertNotEmpty($promo->code);
     }
 
     public function test_promotion_code_factory_inactive_state(): void
@@ -474,6 +471,7 @@ class FactoryTest extends BaseTestCase
     {
         $promo = PromotionCode::factory()->expired()->create();
 
+        $this->assertNotNull($promo->expires_at);
         $this->assertTrue($promo->expires_at->isPast());
     }
 

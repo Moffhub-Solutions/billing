@@ -10,10 +10,10 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create(config('billing.tables.promotion_codes', 'billing_promotion_codes'), function (Blueprint $table): void {
+        Schema::create(billing_table('promotion_codes', 'billing_promotion_codes'), function (Blueprint $table): void {
             $table->id();
             $table->string('code')->unique(); // customer-facing code (e.g., SAVE20)
-            $table->foreignId('coupon_id')->constrained(config('billing.tables.coupons', 'billing_coupons'));
+            $table->foreignId('coupon_id')->constrained(billing_table('coupons', 'billing_coupons'));
             $table->boolean('is_active')->default(true);
             $table->boolean('first_time_transaction')->default(false); // only for new customers
             $table->unsignedInteger('minimum_amount')->nullable(); // minimum purchase in cents
@@ -30,6 +30,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists(config('billing.tables.promotion_codes', 'billing_promotion_codes'));
+        Schema::dropIfExists(billing_table('promotion_codes', 'billing_promotion_codes'));
     }
 };

@@ -163,8 +163,12 @@ class BillableResolutionTest extends BaseTestCase
 
         $this->assertCount(1, $companyA->payments);
         $this->assertCount(1, $companyB->payments);
-        $this->assertEquals(500000, $companyA->payments->first()->amount);
-        $this->assertEquals(300000, $companyB->payments->first()->amount);
+        $aFirst = $companyA->payments->first();
+        $bFirst = $companyB->payments->first();
+        $this->assertNotNull($aFirst);
+        $this->assertNotNull($bFirst);
+        $this->assertEquals(500000, $aFirst->amount);
+        $this->assertEquals(300000, $bFirst->amount);
     }
 
     // ── Invoices scoped to billable ──────────────────────────────
@@ -202,7 +206,9 @@ class BillableResolutionTest extends BaseTestCase
             ->get();
 
         $this->assertCount(1, $companyAInvoices);
-        $this->assertEquals('INV-001', $companyAInvoices->first()->number);
+        $first = $companyAInvoices->first();
+        $this->assertNotNull($first);
+        $this->assertEquals('INV-001', $first->number);
     }
 
     // ── billable_relation config ─────────────────────────────────
@@ -220,7 +226,7 @@ class BillableResolutionTest extends BaseTestCase
         // In test env it's set to the fixture Company; in default config it's App\Models\Company
         $model = config('billing.billable_model');
 
-        $this->assertNotNull($model);
+        $this->assertIsString($model);
         $this->assertStringContainsString('Company', $model);
     }
 }

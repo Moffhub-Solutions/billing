@@ -9,10 +9,13 @@ use Illuminate\Validation\Rule;
 
 class StoreFeatureRequest extends FormRequest
 {
+    /**
+     * @return array<string, mixed>
+     */
     public function rules(): array
     {
         return [
-            'slug' => ['required', 'string', 'max:255', Rule::unique(config('billing.tables.features', 'billing_features'), 'slug')],
+            'slug' => ['required', 'string', 'max:255', Rule::unique(billing_table('features', 'billing_features'), 'slug')],
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'category' => ['nullable', 'string', 'max:255'],

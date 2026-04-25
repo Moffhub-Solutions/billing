@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create(config('billing.tables.payment_tokens', 'billing_payment_tokens'), function (Blueprint $table): void {
+        Schema::create(billing_table('payment_tokens', 'billing_payment_tokens'), function (Blueprint $table): void {
             $table->id();
             $table->ulid()->unique();
             $table->morphs('billable');
@@ -38,6 +38,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists(config('billing.tables.payment_tokens', 'billing_payment_tokens'));
+        Schema::dropIfExists(billing_table('payment_tokens', 'billing_payment_tokens'));
     }
 };

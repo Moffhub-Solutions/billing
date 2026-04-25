@@ -11,6 +11,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Enums\SubscriptionStatus;
 use Moffhub\Billing\Events\PaymentFailed;
@@ -26,7 +27,8 @@ class ProcessTrialConversions implements ShouldQueue
 
     public function handle(PaymentManager $paymentManager): void
     {
-        $subscriptions = Subscription::where('status', SubscriptionStatus::TRIALING)
+        $subscriptions = Subscription::query()
+            ->where('status', SubscriptionStatus::TRIALING)
             ->where('trial_ends_at', '<=', now())
             ->with(['plan', 'billable'])
             ->get();
@@ -40,10 +42,14 @@ class ProcessTrialConversions implements ShouldQueue
     {
         $plan = $subscription->plan;
         $provider = $subscription->payment_provider ?? $paymentManager->getDefaultDriver();
-        $currency = config('billing.currency', 'KES');
+        $currencyRaw = config('billing.currency', 'KES');
+        $currency = is_string($currencyRaw) ? $currencyRaw : 'KES';
 
         try {
             $driver = $paymentManager->driver($provider);
+            if (! $driver instanceof PaymentProviderInterface) {
+                throw new \RuntimeException("driver({$provider}) did not resolve to PaymentProviderInterface.");
+            }
             $result = $driver->charge($plan->base_price, $currency, [
                 'subscription_id' => $subscription->id,
                 'description' => "First billing period for {$plan->name}",
@@ -68,17 +74,21 @@ class ProcessTrialConversions implements ShouldQueue
                     'provider_payment_id' => $result['provider_payment_id'] ?? null,
                     'provider_reference' => $result['provider_reference'] ?? null,
                     'paid_at' => now(),
-                    'metadata' => $result['metadata'] ?? null,
+                    'metadata' => $result['metadata'],
                 ]);
 
-                $subscription->billable->payments()->save($payment);
+                $billable = $subscription->billable;
+                $billable->morphMany(Payment::class, 'billable')->save($payment);
+
+                $periodStart = $subscription->current_period_start ?? now();
+                $periodEnd = $subscription->current_period_end ?? now();
 
                 SubscriptionRenewed::dispatch(
                     $subscription,
                     $subscription->billable,
                     $plan,
-                    $subscription->current_period_start,
-                    $subscription->current_period_end,
+                    $periodStart,
+                    $periodEnd,
                     $plan->base_price,
                     $currency,
                 );
@@ -96,14 +106,18 @@ class ProcessTrialConversions implements ShouldQueue
         }
     }
 
+    /**
+     * @param  array<string, mixed>  $result
+     */
     protected function handleFailure(Subscription $subscription, string $provider, string $currency, array $result): void
     {
-        $gracePeriodDays = (int) config('billing.subscriptions.grace_period_days', 7);
+        $gracePeriodRaw = config('billing.subscriptions.grace_period_days', 7);
+        $gracePeriodDays = is_numeric($gracePeriodRaw) ? (int) $gracePeriodRaw : 7;
 
         // If the trial ended within the grace period window, mark as past_due
         // Otherwise, mark as expired
         $trialEndedAt = $subscription->trial_ends_at;
-        $withinGracePeriod = $trialEndedAt && $trialEndedAt->copy()->addDays($gracePeriodDays)->isFuture();
+        $withinGracePeriod = $trialEndedAt !== null && $trialEndedAt->copy()->addDays($gracePeriodDays)->isFuture();
 
         $newStatus = $withinGracePeriod
             ? SubscriptionStatus::PAST_DUE
@@ -121,10 +135,11 @@ class ProcessTrialConversions implements ShouldQueue
             'status' => PaymentStatus::FAILED,
             'payment_provider' => $provider,
             'failed_at' => now(),
-            'metadata' => $result['metadata'] ?? null,
+            'metadata' => $result['metadata'],
         ]);
 
-        $subscription->billable->payments()->save($payment);
+        $billable = $subscription->billable;
+        $billable->morphMany(Payment::class, 'billable')->save($payment);
 
         PaymentFailed::dispatch(
             $payment,

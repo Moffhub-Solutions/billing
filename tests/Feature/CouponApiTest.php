@@ -84,7 +84,7 @@ class CouponApiTest extends BaseTestCase
             ->assertJsonPath('data.discount_type', 'percent')
             ->assertJsonPath('data.discount_value', 20);
 
-        $this->assertDatabaseHas(config('billing.tables.coupons', 'billing_coupons'), [
+        $this->assertDatabaseHas(billing_table('coupons', 'billing_coupons'), [
             'name' => '20% Off',
             'discount_type' => 'percent',
         ]);
@@ -159,9 +159,15 @@ class CouponApiTest extends BaseTestCase
         $response->assertOk()
             ->assertJsonPath('message', 'Coupon and associated promotion codes deactivated.');
 
-        $this->assertFalse($coupon->fresh()->is_active);
-        $this->assertFalse($code1->fresh()->is_active);
-        $this->assertFalse($code2->fresh()->is_active);
+        $couponFresh = $coupon->fresh();
+        $code1Fresh = $code1->fresh();
+        $code2Fresh = $code2->fresh();
+        $this->assertNotNull($couponFresh);
+        $this->assertNotNull($code1Fresh);
+        $this->assertNotNull($code2Fresh);
+        $this->assertFalse($couponFresh->is_active);
+        $this->assertFalse($code1Fresh->is_active);
+        $this->assertFalse($code2Fresh->is_active);
     }
 
     // ─── Create Promotion Code ──────────────────────────────────────────
@@ -179,7 +185,7 @@ class CouponApiTest extends BaseTestCase
             ->assertJsonPath('data.code', 'SAVE20')
             ->assertJsonPath('data.is_active', true);
 
-        $this->assertDatabaseHas(config('billing.tables.promotion_codes', 'billing_promotion_codes'), [
+        $this->assertDatabaseHas(billing_table('promotion_codes', 'billing_promotion_codes'), [
             'code' => 'SAVE20',
             'coupon_id' => $coupon->id,
         ]);
@@ -336,8 +342,12 @@ class CouponApiTest extends BaseTestCase
             'amount' => 100000,
         ]);
 
-        $this->assertEquals(1, $coupon->fresh()->times_redeemed);
-        $this->assertEquals(1, $promoCode->fresh()->times_redeemed);
+        $couponFresh = $coupon->fresh();
+        $promoFresh = $promoCode->fresh();
+        $this->assertNotNull($couponFresh);
+        $this->assertNotNull($promoFresh);
+        $this->assertEquals(1, $couponFresh->times_redeemed);
+        $this->assertEquals(1, $promoFresh->times_redeemed);
     }
 
     public function test_redeem_code_no_billable(): void
@@ -359,6 +369,9 @@ class CouponApiTest extends BaseTestCase
 
     // ─── Helpers ────────────────────────────────────────────────────────
 
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
     protected function createCoupon(array $attributes = []): Coupon
     {
         return Coupon::create(array_merge([

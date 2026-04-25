@@ -170,16 +170,23 @@ class SubscriptionApiTest extends BaseTestCase
         $response->assertOk();
 
         $data = $response->json();
+        $this->assertIsArray($data);
 
+        $features = $data['features'] ?? null;
+        $this->assertIsArray($features);
         // Should include features from the plan
-        $this->assertContains('gatebook', $data['features']);
-        $this->assertContains('shifts', $data['features']);
-        $this->assertContains('ocr_scanning', $data['features']);
+        $this->assertContains('gatebook', $features);
+        $this->assertContains('shifts', $features);
+        $this->assertContains('ocr_scanning', $features);
 
+        $usage = $data['usage'] ?? null;
+        $this->assertIsArray($usage);
         // Should include usage summary for limits
-        $this->assertArrayHasKey('ocr_scanning', $data['usage']);
-        $this->assertEquals(0, $data['usage']['ocr_scanning']['used']);
-        $this->assertEquals(500, $data['usage']['ocr_scanning']['limit']);
+        $this->assertArrayHasKey('ocr_scanning', $usage);
+        $ocr = $usage['ocr_scanning'] ?? null;
+        $this->assertIsArray($ocr);
+        $this->assertEquals(0, $ocr['used'] ?? null);
+        $this->assertEquals(500, $ocr['limit'] ?? null);
     }
 
     public function test_get_current_subscription_no_subscription(): void

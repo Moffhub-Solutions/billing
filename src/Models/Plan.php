@@ -31,6 +31,9 @@ use Moffhub\Billing\Enums\BillingCycle;
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Collection<int, Subscription> $subscriptions
+ *
+ * @method static Builder<self> active()
+ * @method static Builder<self> ordered()
  */
 class Plan extends Model
 {
@@ -62,9 +65,14 @@ class Plan extends Model
     #[\Override]
     public function getTable(): string
     {
-        return config('billing.tables.plans', 'billing_plans');
+        $value = config('billing.tables.plans', 'billing_plans');
+
+        return is_string($value) ? $value : 'billing_plans';
     }
 
+    /**
+     * @return HasMany<Subscription, $this>
+     */
     public function subscriptions(): HasMany
     {
         return $this->hasMany(Subscription::class);

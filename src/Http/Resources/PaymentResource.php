@@ -6,9 +6,16 @@ namespace Moffhub\Billing\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Moffhub\Billing\Models\Payment;
 
+/**
+ * @mixin Payment
+ */
 class PaymentResource extends JsonResource
 {
+    /**
+     * @return array<string, mixed>
+     */
     #[\Override]
     public function toArray(Request $request): array
     {
@@ -17,7 +24,7 @@ class PaymentResource extends JsonResource
             'amount' => $this->amount,
             'formatted_amount' => $this->formattedAmount(),
             'currency' => $this->currency,
-            'status' => $this->status?->value,
+            'status' => $this->status->value,
             'payment_provider' => $this->payment_provider,
             'provider_payment_id' => $this->provider_payment_id,
             'provider_reference' => $this->provider_reference,
@@ -29,7 +36,7 @@ class PaymentResource extends JsonResource
             'paid_at' => $this->paid_at?->toIso8601ZuluString(),
             'failed_at' => $this->failed_at?->toIso8601ZuluString(),
             'refunded_at' => $this->refunded_at?->toIso8601ZuluString(),
-            'created_at' => $this->created_at?->toIso8601ZuluString(),
+            'created_at' => $this->created_at->toIso8601ZuluString(),
         ];
     }
 }

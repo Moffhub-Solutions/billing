@@ -6,9 +6,16 @@ namespace Moffhub\Billing\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Moffhub\Billing\Models\UsageRecord;
 
+/**
+ * @mixin UsageRecord
+ */
 class UsageRecordResource extends JsonResource
 {
+    /**
+     * @return array<string, mixed>
+     */
     #[\Override]
     public function toArray(Request $request): array
     {
@@ -21,8 +28,8 @@ class UsageRecordResource extends JsonResource
             'percentage' => $this->usagePercentage(),
             'is_within_limit' => $this->isWithinLimit(),
             'overage_count' => $this->overage_count,
-            'period_start' => $this->period_start?->toIso8601ZuluString(),
-            'period_end' => $this->period_end?->toIso8601ZuluString(),
+            'period_start' => $this->period_start->toIso8601ZuluString(),
+            'period_end' => $this->period_end->toIso8601ZuluString(),
         ];
     }
 }

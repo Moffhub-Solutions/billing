@@ -10,9 +10,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create(config('billing.tables.invoice_items', 'billing_invoice_items'), function (Blueprint $table): void {
+        Schema::create(billing_table('invoice_items', 'billing_invoice_items'), function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('invoice_id')->constrained(config('billing.tables.invoices', 'billing_invoices'))->cascadeOnDelete();
+            $table->foreignId('invoice_id')->constrained(billing_table('invoices', 'billing_invoices'))->cascadeOnDelete();
             $table->string('description');
             $table->unsignedInteger('quantity')->default(1);
             $table->integer('unit_price')->default(0);
@@ -27,6 +27,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists(config('billing.tables.invoice_items', 'billing_invoice_items'));
+        Schema::dropIfExists(billing_table('invoice_items', 'billing_invoice_items'));
     }
 };

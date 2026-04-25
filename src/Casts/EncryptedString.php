@@ -16,12 +16,21 @@ use Illuminate\Support\Facades\Crypt;
  *   protected function casts(): array {
  *       return ['phone' => EncryptedString::class];
  *   }
+ *
+ * @implements CastsAttributes<string, string|int|float|bool>
  */
 class EncryptedString implements CastsAttributes
 {
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
     public function get(Model $model, string $key, mixed $value, array $attributes): ?string
     {
         if ($value === null) {
+            return null;
+        }
+
+        if (! is_string($value)) {
             return null;
         }
 
@@ -37,16 +46,25 @@ class EncryptedString implements CastsAttributes
         }
     }
 
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
     public function set(Model $model, string $key, mixed $value, array $attributes): ?string
     {
         if ($value === null) {
             return null;
         }
 
+        $stringValue = match (true) {
+            is_string($value) => $value,
+            is_int($value), is_float($value) => (string) $value,
+            default => $value ? '1' : '0',
+        };
+
         if (! config('billing.security.encrypt_at_rest', false)) {
-            return $value;
+            return $stringValue;
         }
 
-        return Crypt::encryptString($value);
+        return Crypt::encryptString($stringValue);
     }
 }

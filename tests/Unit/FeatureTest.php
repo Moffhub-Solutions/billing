@@ -23,7 +23,7 @@ class FeatureTest extends BaseTestCase
             'is_active' => true,
         ]);
 
-        $this->assertDatabaseHas(config('billing.tables.features'), [
+        $this->assertDatabaseHas(billing_table('features', 'billing_features'), [
             'slug' => 'ocr_scanning',
         ]);
 

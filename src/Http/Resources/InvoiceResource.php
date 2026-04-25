@@ -6,17 +6,24 @@ namespace Moffhub\Billing\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Moffhub\Billing\Models\Invoice;
 
+/**
+ * @mixin Invoice
+ */
 class InvoiceResource extends JsonResource
 {
+    /**
+     * @return array<string, mixed>
+     */
     #[\Override]
     public function toArray(Request $request): array
     {
         return [
             'id' => $this->ulid,
             'number' => $this->number,
-            'status' => $this->status?->value,
-            'status_label' => $this->status?->label(),
+            'status' => $this->status->value,
+            'status_label' => $this->status->label(),
             'subtotal' => $this->subtotal,
             'tax_amount' => $this->tax_amount,
             'tax_rate' => $this->tax_rate,
@@ -30,8 +37,8 @@ class InvoiceResource extends JsonResource
             'notes' => $this->notes,
             'items' => InvoiceItemResource::collection($this->whenLoaded('items')),
             'metadata' => $this->when($this->metadata !== null, $this->metadata),
-            'created_at' => $this->created_at?->toIso8601ZuluString(),
-            'updated_at' => $this->updated_at?->toIso8601ZuluString(),
+            'created_at' => $this->created_at->toIso8601ZuluString(),
+            'updated_at' => $this->updated_at->toIso8601ZuluString(),
         ];
     }
 }

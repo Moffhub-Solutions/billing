@@ -15,13 +15,20 @@ class CouponRedemptionFactory extends Factory
 {
     protected $model = CouponRedemption::class;
 
+    /**
+     * @return array<string, mixed>
+     */
     public function definition(): array
     {
-        $originalAmount = fake()->randomElement([250000, 500000, 750000]);
+        $originalAmountValue = fake()->randomElement([250000, 500000, 750000]);
+        $originalAmount = is_int($originalAmountValue) ? $originalAmountValue : 250000;
         $discountAmount = (int) round($originalAmount * 0.2);
 
+        $billableModelRaw = config('billing.billable_model', 'App\\Models\\Company');
+        $billableModel = is_string($billableModelRaw) ? $billableModelRaw : 'App\\Models\\Company';
+
         return [
-            'billable_type' => config('billing.billable_model', 'App\\Models\\Company'),
+            'billable_type' => $billableModel,
             'billable_id' => 1,
             'coupon_id' => Coupon::factory(),
             'original_amount' => $originalAmount,

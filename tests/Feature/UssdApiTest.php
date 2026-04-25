@@ -18,9 +18,11 @@ class UssdApiTest extends BaseTestCase
     {
         parent::defineEnvironment($app);
 
-        $app['config']->set('billing.ussd.enabled', true);
-        $app['config']->set('billing.ussd.phone_field', 'phone');
-        $app['config']->set('billing.invoices.company_name', 'TestCo');
+        $config = $app->make('config');
+
+        $config->set('billing.ussd.enabled', true);
+        $config->set('billing.ussd.phone_field', 'phone');
+        $config->set('billing.invoices.company_name', 'TestCo');
     }
 
     // ─── Route Registration ─────────────────────────────────────────────
@@ -37,7 +39,7 @@ class UssdApiTest extends BaseTestCase
         ]);
 
         $response->assertOk();
-        $this->assertStringStartsWith('text/plain', $response->headers->get('Content-Type'));
+        $this->assertStringStartsWith('text/plain', $response->headers->get('Content-Type') ?? '');
     }
 
     public function test_ussd_route_not_registered_when_disabled(): void
@@ -61,7 +63,9 @@ class UssdApiTest extends BaseTestCase
         ]);
 
         $response->assertOk();
-        $content = $response->getContent();
+        $contentRaw = $response->getContent();
+        $this->assertIsString($contentRaw);
+        $content = $contentRaw;
         $this->assertStringStartsWith('CON', $content);
         $this->assertStringContainsString('TestCo Billing', $content);
         $this->assertStringContainsString('1. My Account', $content);
@@ -82,7 +86,9 @@ class UssdApiTest extends BaseTestCase
         ]);
 
         $response->assertOk();
-        $content = $response->getContent();
+        $contentRaw = $response->getContent();
+        $this->assertIsString($contentRaw);
+        $content = $contentRaw;
         $this->assertStringStartsWith('END', $content);
         $this->assertStringContainsString('not linked', $content);
     }
@@ -119,7 +125,9 @@ class UssdApiTest extends BaseTestCase
         ]);
 
         $response->assertOk();
-        $content = $response->getContent();
+        $contentRaw = $response->getContent();
+        $this->assertIsString($contentRaw);
+        $content = $contentRaw;
         $this->assertStringStartsWith('END', $content);
         $this->assertStringContainsString('Plan: Standard', $content);
         $this->assertStringContainsString('Status: Active', $content);
@@ -139,7 +147,9 @@ class UssdApiTest extends BaseTestCase
         ]);
 
         $response->assertOk();
-        $content = $response->getContent();
+        $contentRaw = $response->getContent();
+        $this->assertIsString($contentRaw);
+        $content = $contentRaw;
         $this->assertStringStartsWith('CON', $content);
         $this->assertStringContainsString('Enter amount', $content);
     }
@@ -156,7 +166,9 @@ class UssdApiTest extends BaseTestCase
         ]);
 
         $response->assertOk();
-        $content = $response->getContent();
+        $contentRaw = $response->getContent();
+        $this->assertIsString($contentRaw);
+        $content = $contentRaw;
         $this->assertStringStartsWith('CON', $content);
         $this->assertStringContainsString('KES 500.00', $content);
         $this->assertStringContainsString('1. Confirm', $content);
@@ -176,7 +188,9 @@ class UssdApiTest extends BaseTestCase
         ]);
 
         $response->assertOk();
-        $content = $response->getContent();
+        $contentRaw = $response->getContent();
+        $this->assertIsString($contentRaw);
+        $content = $contentRaw;
         $this->assertStringStartsWith('END', $content);
         $this->assertStringContainsString('No active subscription', $content);
     }
@@ -215,7 +229,9 @@ class UssdApiTest extends BaseTestCase
         ]);
 
         $response->assertOk();
-        $content = $response->getContent();
+        $contentRaw = $response->getContent();
+        $this->assertIsString($contentRaw);
+        $content = $contentRaw;
         $this->assertStringStartsWith('CON', $content);
         $this->assertStringContainsString('Starter', $content);
         $this->assertStringContainsString('Premium', $content);
@@ -234,7 +250,7 @@ class UssdApiTest extends BaseTestCase
             'text' => '',
         ]);
 
-        $this->assertStringStartsWith('text/plain', $response->headers->get('Content-Type'));
+        $this->assertStringStartsWith('text/plain', $response->headers->get('Content-Type') ?? '');
     }
 
     // ─── Invalid Input ──────────────────────────────────────────────────
@@ -251,7 +267,9 @@ class UssdApiTest extends BaseTestCase
         ]);
 
         $response->assertOk();
-        $content = $response->getContent();
+        $contentRaw = $response->getContent();
+        $this->assertIsString($contentRaw);
+        $content = $contentRaw;
         $this->assertStringStartsWith('END', $content);
         $this->assertStringContainsString('Invalid option', $content);
     }

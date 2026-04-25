@@ -15,11 +15,11 @@ class ManualProvider extends BasePaymentProvider
         return [
             'success' => true,
             'provider_payment_id' => 'manual_'.Str::ulid()->toBase32(),
-            'provider_reference' => $options['reference'] ?? null,
+            'provider_reference' => $this->optionNullableString($options, 'reference'),
             'status' => 'pending',
             'metadata' => [
-                'payment_type' => $options['payment_type'] ?? 'cash',
-                'notes' => $options['notes'] ?? null,
+                'payment_type' => $this->optionString($options, 'payment_type', 'cash'),
+                'notes' => $this->optionNullableString($options, 'notes'),
                 'recorded_by' => $options['recorded_by'] ?? null,
             ],
         ];
@@ -32,7 +32,7 @@ class ManualProvider extends BasePaymentProvider
             'provider_refund_id' => 'manual_refund_'.Str::ulid()->toBase32(),
             'status' => 'completed',
             'metadata' => [
-                'notes' => $options['notes'] ?? null,
+                'notes' => $this->optionNullableString($options, 'notes'),
                 'refunded_by' => $options['refunded_by'] ?? null,
             ],
         ];

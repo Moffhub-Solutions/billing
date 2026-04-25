@@ -6,15 +6,15 @@ namespace Moffhub\Billing\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
 use Illuminate\Support\Str;
+use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Events\PaymentReceived;
 use Moffhub\Billing\Http\Requests\StorePaymentRequest;
 use Moffhub\Billing\Http\Resources\PaymentResource;
 use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\PaymentManager;
 
-class PaymentController extends Controller
+class PaymentController extends BillingController
 {
     public function __construct(
         protected PaymentManager $paymentManager,
@@ -59,32 +59,45 @@ class PaymentController extends Controller
             return response()->json(['message' => 'No billable entity found.'], 404);
         }
 
-        $provider = $request->input('provider', config('billing.default_provider'));
+        $defaultProvider = config('billing.default_provider', 'manual');
+        $providerInput = $request->input('provider', is_string($defaultProvider) ? $defaultProvider : 'manual');
+        $provider = is_string($providerInput) ? $providerInput : 'manual';
         $driver = $this->paymentManager->driver($provider);
+
+        if (! $driver instanceof PaymentProviderInterface) {
+            return response()->json(['message' => 'Invalid payment provider.'], 500);
+        }
+
+        $currencyDefault = config('billing.currency', 'KES');
+        $currency = $request->string('currency', is_string($currencyDefault) ? $currencyDefault : 'KES')->toString();
+
+        $optionsRaw = $request->input('options', []);
+        $options = is_array($optionsRaw) ? $optionsRaw : [];
 
         // Initiate charge via provider
         $result = $driver->charge(
             $request->integer('amount'),
-            $request->input('currency', config('billing.currency', 'KES')),
-            $request->input('options', []),
+            $currency,
+            $options,
         );
 
-        // Record the payment
-        $payment = $billable->payments()->create([
+        $payment = new Payment([
             'ulid' => Str::ulid()->toBase32(),
             'subscription_id' => $request->input('subscription_id'),
             'invoice_id' => $request->input('invoice_id'),
             'amount' => $request->integer('amount'),
-            'currency' => $request->input('currency', config('billing.currency', 'KES')),
-            'status' => $result['success'] ? ($result['status'] ?? 'pending') : 'failed',
+            'currency' => $currency,
+            'status' => $result['success'] ? $result['status'] : 'failed',
             'payment_provider' => $provider,
-            'provider_payment_id' => $result['provider_payment_id'] ?? null,
-            'provider_reference' => $result['provider_reference'] ?? null,
+            'provider_payment_id' => $result['provider_payment_id'],
+            'provider_reference' => $result['provider_reference'],
             'payment_method' => $request->input('payment_method'),
-            'metadata' => $result['metadata'] ?? null,
+            'metadata' => $result['metadata'],
             'paid_at' => $result['status'] === 'completed' ? now() : null,
             'failed_at' => $result['success'] ? null : now(),
         ]);
+
+        $billable->payments()->save($payment);
 
         if ($payment->isCompleted()) {
             PaymentReceived::dispatch(
@@ -108,10 +121,10 @@ class PaymentController extends Controller
      */
     public function show(int $payment): JsonResponse
     {
-        $payment = Payment::findOrFail($payment);
+        $paymentModel = Payment::query()->findOrFail($payment);
 
         return response()->json([
-            'data' => new PaymentResource($payment),
+            'data' => new PaymentResource($paymentModel),
         ]);
     }
 
@@ -125,56 +138,53 @@ class PaymentController extends Controller
             'reason' => ['sometimes', 'string', 'max:500'],
         ]);
 
-        $payment = Payment::findOrFail($payment);
+        $paymentModel = Payment::query()->findOrFail($payment);
 
-        if (! $payment->isCompleted()) {
+        if (! $paymentModel->isCompleted()) {
             return response()->json([
                 'message' => 'Only completed payments can be refunded.',
             ], 422);
         }
 
-        $driver = $this->paymentManager->driver($payment->payment_provider ?? config('billing.default_provider'));
+        $providerPaymentId = $paymentModel->provider_payment_id;
+
+        if ($providerPaymentId === null) {
+            return response()->json([
+                'message' => 'Payment has no provider_payment_id; cannot refund.',
+            ], 422);
+        }
+
+        $defaultProvider = config('billing.default_provider', 'manual');
+        $provider = $paymentModel->payment_provider ?? (is_string($defaultProvider) ? $defaultProvider : 'manual');
+        $driver = $this->paymentManager->driver($provider);
+
+        if (! $driver instanceof PaymentProviderInterface) {
+            return response()->json(['message' => 'Invalid payment provider.'], 500);
+        }
+
+        $amountRaw = $request->input('amount');
 
         $result = $driver->refund(
-            $payment->provider_payment_id,
-            $request->input('amount'),
+            $providerPaymentId,
+            is_numeric($amountRaw) ? (int) $amountRaw : null,
             ['reason' => $request->input('reason')],
         );
 
         if ($result['success']) {
-            $payment->update([
+            $paymentModel->update([
                 'status' => 'refunded',
                 'refunded_at' => now(),
-                'metadata' => array_merge($payment->metadata ?? [], [
+                'metadata' => array_merge($paymentModel->metadata ?? [], [
                     'refund' => $result,
                 ]),
             ]);
         }
 
+        $fresh = $paymentModel->fresh();
+
         return response()->json([
             'message' => $result['success'] ? 'Payment refunded.' : 'Refund failed.',
-            'data' => new PaymentResource($payment->fresh()),
+            'data' => new PaymentResource($fresh ?? $paymentModel),
         ], $result['success'] ? 200 : 422);
-    }
-
-    protected function resolveBillable(Request $request): mixed
-    {
-        $user = $request->user();
-
-        if ($user === null) {
-            return null;
-        }
-
-        if (method_exists($user, 'payments')) {
-            return $user;
-        }
-
-        $billableRelation = config('billing.billable_relation', 'company');
-
-        if (method_exists($user, $billableRelation)) {
-            return $user->{$billableRelation};
-        }
-
-        return null;
     }
 }

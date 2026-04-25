@@ -26,7 +26,7 @@ class PlanTest extends BaseTestCase
             'limits' => ['max_posts' => 2, 'max_guards' => 5],
         ]);
 
-        $this->assertDatabaseHas(config('billing.tables.plans'), [
+        $this->assertDatabaseHas(billing_table('plans', 'billing_plans'), [
             'slug' => 'starter',
             'base_price' => 250000,
         ]);

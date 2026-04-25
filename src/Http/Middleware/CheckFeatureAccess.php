@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Http\Middleware;
 
 use Closure;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Moffhub\Billing\Contracts\BillableInterface;
 use Moffhub\Billing\Exceptions\FeatureNotAvailableException;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -28,7 +30,7 @@ class CheckFeatureAccess
         }
 
         // Admin bypass — skip all feature checks
-        if (method_exists($billable, 'isBillingAdmin') && $billable->isBillingAdmin()) {
+        if ($billable->isBillingAdmin()) {
             return $next($request);
         }
 
@@ -49,24 +51,32 @@ class CheckFeatureAccess
      * Resolve the billable entity from the request.
      * Override this in a subclass to customize resolution.
      */
-    protected function resolveBillable(Request $request): mixed
+    /**
+     * @return (Model&BillableInterface)|null
+     */
+    protected function resolveBillable(Request $request): (Model&BillableInterface)|null
     {
         $user = $request->user();
 
-        if ($user === null) {
+        if (! is_object($user)) {
             return null;
         }
 
-        // If the user model itself is billable
-        if (method_exists($user, 'hasFeature')) {
+        if ($user instanceof BillableInterface) {
             return $user;
         }
 
-        // If the user belongs to a billable entity (e.g., company)
-        $billableRelation = config('billing.billable_relation', 'company');
+        $relationConfig = config('billing.billable_relation', 'company');
+        $relation = is_string($relationConfig) ? $relationConfig : 'company';
 
-        if (method_exists($user, $billableRelation)) {
-            return $user->{$billableRelation};
+        if (! method_exists($user, $relation)) {
+            return null;
+        }
+
+        $resolved = $user->{$relation};
+
+        if ($resolved instanceof Model && $resolved instanceof BillableInterface) {
+            return $resolved;
         }
 
         return null;

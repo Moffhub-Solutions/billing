@@ -8,9 +8,37 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 use Moffhub\Billing\Casts\EncryptedString;
 use Moffhub\Billing\Database\Factories\PaymentTokenFactory;
 
+/**
+ * @property int $id
+ * @property string $ulid
+ * @property string $billable_type
+ * @property int $billable_id
+ * @property string $provider
+ * @property string $token_type
+ * @property string|null $token
+ * @property string|null $phone
+ * @property string|null $email
+ * @property string|null $card_brand
+ * @property string|null $card_exp_month
+ * @property string|null $card_exp_year
+ * @property string|null $last_four
+ * @property string|null $bank_name
+ * @property bool $is_default
+ * @property bool $is_reusable
+ * @property Carbon|null $expires_at
+ * @property Carbon|null $last_used_at
+ * @property array<string, mixed>|null $metadata
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
+ * @property-read Model $billable
+ *
+ * @method static Builder<self> default()
+ * @method static Builder<self> usable()
+ */
 class PaymentToken extends Model
 {
     /** @use HasFactory<PaymentTokenFactory> */
@@ -51,9 +79,14 @@ class PaymentToken extends Model
     #[\Override]
     public function getTable(): string
     {
-        return config('billing.tables.payment_tokens', 'billing_payment_tokens');
+        $value = config('billing.tables.payment_tokens', 'billing_payment_tokens');
+
+        return is_string($value) ? $value : 'billing_payment_tokens';
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function billable(): MorphTo
     {
         return $this->morphTo();

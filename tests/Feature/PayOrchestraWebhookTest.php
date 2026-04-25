@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Tests\Feature;
 
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -60,7 +61,8 @@ class PayOrchestraWebhookTest extends BaseTestCase
         $this->assertSame(PaymentStatus::COMPLETED, $payment->status);
         $this->assertNotNull($payment->paid_at);
         $this->assertSame('PO-REF-1', $payment->provider_reference);
-        $this->assertSame('mpesa', $payment->metadata['channel']);
+        $metadata = $payment->metadata ?? [];
+        $this->assertSame('mpesa', $metadata['channel'] ?? null);
 
         Event::assertDispatched(
             PaymentReceived::class,
@@ -106,7 +108,9 @@ class PayOrchestraWebhookTest extends BaseTestCase
         $this->postSignedWebhook($body)->assertOk();
 
         Event::assertDispatchedTimes(PaymentReceived::class, 1);
-        $this->assertSame(PaymentStatus::COMPLETED, $payment->fresh()->status);
+        $fresh = $payment->fresh();
+        $this->assertNotNull($fresh);
+        $this->assertSame(PaymentStatus::COMPLETED, $fresh->status);
     }
 
     public function test_pending_status_is_acknowledged_but_not_applied(): void
@@ -128,10 +132,16 @@ class PayOrchestraWebhookTest extends BaseTestCase
 
         $this->postSignedWebhook($body)->assertOk();
 
-        $this->assertSame(PaymentStatus::PENDING, $payment->fresh()->status);
+        $fresh = $payment->fresh();
+        $this->assertNotNull($fresh);
+        $this->assertSame(PaymentStatus::PENDING, $fresh->status);
         Event::assertNotDispatched(PaymentReceived::class);
     }
 
+    /**
+     * @param  array<string, mixed>  $body
+     * @return TestResponse<Response>
+     */
     protected function postSignedWebhook(array $body): TestResponse
     {
         $payload = json_encode($body, JSON_THROW_ON_ERROR);
@@ -165,6 +175,9 @@ class PayOrchestraWebhookTest extends BaseTestCase
 
         $company->payments()->save($payment);
 
-        return $payment->fresh();
+        $fresh = $payment->fresh();
+        $this->assertNotNull($fresh);
+
+        return $fresh;
     }
 }

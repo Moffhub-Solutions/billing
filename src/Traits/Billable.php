@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Traits;
 
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Models\CouponRedemption;
 use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\Models\PaymentToken;
@@ -37,6 +38,8 @@ trait Billable
 
     /**
      * Get all subscriptions.
+     *
+     * @return MorphMany<Subscription, $this>
      */
     public function subscriptions(): MorphMany
     {
@@ -45,6 +48,8 @@ trait Billable
 
     /**
      * Get all payments.
+     *
+     * @return MorphMany<Payment, $this>
      */
     public function payments(): MorphMany
     {
@@ -53,6 +58,8 @@ trait Billable
 
     /**
      * Get all usage records.
+     *
+     * @return MorphMany<UsageRecord, $this>
      */
     public function usageRecords(): MorphMany
     {
@@ -61,6 +68,8 @@ trait Billable
 
     /**
      * Get all saved payment tokens/methods.
+     *
+     * @return MorphMany<PaymentToken, $this>
      */
     public function paymentTokens(): MorphMany
     {
@@ -77,6 +86,8 @@ trait Billable
 
     /**
      * Get all coupon redemptions.
+     *
+     * @return MorphMany<CouponRedemption, $this>
      */
     public function couponRedemptions(): MorphMany
     {
@@ -147,13 +158,13 @@ trait Billable
      */
     public function isBillingAdmin(): bool
     {
-        $method = config('billing.admin_bypass_method');
+        $methodValue = config('billing.admin_bypass_method');
 
-        if ($method === null) {
+        if (! is_string($methodValue) || $methodValue === '') {
             return false;
         }
 
-        return method_exists($this, $method) && $this->{$method}() === true;
+        return method_exists($this, $methodValue) && $this->{$methodValue}() === true;
     }
 
     /**
@@ -166,7 +177,11 @@ trait Billable
             ->currentPeriod()
             ->first();
 
-        return $record?->usage_count ?? 0;
+        if (! $record instanceof UsageRecord) {
+            return 0;
+        }
+
+        return $record->usage_count;
     }
 
     /**
@@ -223,15 +238,22 @@ trait Billable
      */
     public function chargeVia(string $channel, int $amount, string $currency, array $options = []): array
     {
+        $existingMetadata = $options['metadata'] ?? [];
+        $metadataArray = is_array($existingMetadata) ? $existingMetadata : [];
+
         $options['channel'] = $channel;
-        $options['metadata'] = array_merge($options['metadata'] ?? [], [
+        $options['metadata'] = array_merge($metadataArray, [
             'billable_type' => static::class,
             'billable_id' => $this->getKey(),
         ]);
 
-        return app(PaymentManager::class)
-            ->driver('payorchestra')
-            ->charge($amount, $currency, $options);
+        $driver = app(PaymentManager::class)->driver('payorchestra');
+
+        if (! $driver instanceof PaymentProviderInterface) {
+            throw new \RuntimeException('payorchestra driver did not resolve to PaymentProviderInterface.');
+        }
+
+        return $driver->charge($amount, $currency, $options);
     }
 
     /**
@@ -251,7 +273,10 @@ trait Billable
             throw new \RuntimeException('Hosted payments require the payorchestra driver.');
         }
 
-        $options['metadata'] = array_merge($options['metadata'] ?? [], [
+        $existingMetadata = $options['metadata'] ?? [];
+        $metadataArray = is_array($existingMetadata) ? $existingMetadata : [];
+
+        $options['metadata'] = array_merge($metadataArray, [
             'billable_type' => static::class,
             'billable_id' => $this->getKey(),
         ]);

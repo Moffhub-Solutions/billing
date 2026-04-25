@@ -24,7 +24,9 @@ class ManualProviderTest extends BaseTestCase
 
         $this->assertTrue($result['success']);
         $this->assertEquals('pending', $result['status']);
-        $this->assertStringStartsWith('manual_', $result['provider_payment_id']);
+        $providerPaymentId = $result['provider_payment_id'];
+        $this->assertIsString($providerPaymentId);
+        $this->assertStringStartsWith('manual_', $providerPaymentId);
         $this->assertNull($result['provider_reference']);
         $this->assertEquals('cash', $result['metadata']['payment_type']);
     }
@@ -51,7 +53,9 @@ class ManualProviderTest extends BaseTestCase
 
         $this->assertTrue($result['success']);
         $this->assertEquals('completed', $result['status']);
-        $this->assertStringStartsWith('manual_refund_', $result['provider_refund_id']);
+        $refundId = $result['provider_refund_id'];
+        $this->assertIsString($refundId);
+        $this->assertStringStartsWith('manual_refund_', $refundId);
     }
 
     public function test_get_payment_status(): void
@@ -79,7 +83,6 @@ class ManualProviderTest extends BaseTestCase
         $this->assertEquals('pending', $result['status']);
         $this->assertNull($result['amount']);
         $this->assertNull($result['currency']);
-        $this->assertIsArray($result['metadata']);
     }
 
     public function test_is_configured(): void

@@ -69,7 +69,7 @@ class InvoiceServiceTest extends BaseTestCase
         $this->assertSame(1600, $invoice->tax_amount); // 16% VAT
         $this->assertSame(11600, $invoice->total);
         $this->assertSame(16.0, $invoice->tax_rate);
-        $this->assertNotNull($invoice->number);
+        $this->assertNotEmpty($invoice->number);
         $this->assertNotNull($invoice->due_date);
     }
 
@@ -81,6 +81,7 @@ class InvoiceServiceTest extends BaseTestCase
         $this->assertCount(1, $invoice->items);
 
         $item = $invoice->items->first();
+        $this->assertNotNull($item);
         $this->assertSame('Professional - Monthly', $item->description);
         $this->assertSame(1, $item->quantity);
         $this->assertSame(10000, $item->unit_price);
@@ -127,7 +128,8 @@ class InvoiceServiceTest extends BaseTestCase
         $invoice2 = $this->service->generateForSubscription($this->subscription);
 
         $year = now()->year;
-        $prefix = config('billing.invoices.prefix', 'INV');
+        $prefixRaw = config('billing.invoices.prefix', 'INV');
+        $prefix = is_string($prefixRaw) ? $prefixRaw : 'INV';
 
         $this->assertSame("{$prefix}-{$year}-0001", $invoice1->number);
         $this->assertSame("{$prefix}-{$year}-0002", $invoice2->number);
@@ -154,9 +156,10 @@ class InvoiceServiceTest extends BaseTestCase
 
         $creditNote = $this->service->generateCreditNote($invoice, 3000, 'Service issue');
 
-        $this->assertSame($invoice->id, $creditNote->metadata['original_invoice_id']);
-        $this->assertTrue($creditNote->metadata['is_credit_note']);
-        $this->assertSame('Service issue', $creditNote->metadata['reason']);
+        $metadata = $creditNote->metadata ?? [];
+        $this->assertSame($invoice->id, $metadata['original_invoice_id'] ?? null);
+        $this->assertTrue($metadata['is_credit_note'] ?? false);
+        $this->assertSame('Service issue', $metadata['reason'] ?? null);
 
         $original = $creditNote->creditNoteFor();
         $this->assertNotNull($original);
@@ -199,8 +202,12 @@ class InvoiceServiceTest extends BaseTestCase
         $count = $this->service->markOverdue();
 
         $this->assertSame(1, $count);
-        $this->assertSame(InvoiceStatus::OVERDUE, $pastDueInvoice->fresh()->status);
-        $this->assertSame(InvoiceStatus::SENT, $futureInvoice->fresh()->status);
+        $pastDueFresh = $pastDueInvoice->fresh();
+        $futureFresh = $futureInvoice->fresh();
+        $this->assertNotNull($pastDueFresh);
+        $this->assertNotNull($futureFresh);
+        $this->assertSame(InvoiceStatus::OVERDUE, $pastDueFresh->status);
+        $this->assertSame(InvoiceStatus::SENT, $futureFresh->status);
     }
 
     #[Test]
@@ -225,6 +232,8 @@ class InvoiceServiceTest extends BaseTestCase
         $count = $this->service->markOverdue();
 
         $this->assertSame(0, $count);
-        $this->assertSame(InvoiceStatus::PAID, $paidInvoice->fresh()->status);
+        $paidFresh = $paidInvoice->fresh();
+        $this->assertNotNull($paidFresh);
+        $this->assertSame(InvoiceStatus::PAID, $paidFresh->status);
     }
 }

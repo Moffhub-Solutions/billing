@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create(config('billing.tables.coupons', 'billing_coupons'), function (Blueprint $table): void {
+        Schema::create(billing_table('coupons', 'billing_coupons'), function (Blueprint $table): void {
             $table->id();
             $table->ulid()->unique();
             $table->string('name');
@@ -33,6 +33,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists(config('billing.tables.coupons', 'billing_coupons'));
+        Schema::dropIfExists(billing_table('coupons', 'billing_coupons'));
     }
 };
