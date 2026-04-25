@@ -110,6 +110,14 @@ class WebhookController extends Controller
     }
 
     /**
+     * Handle PayOrchestra backbone webhook.
+     */
+    public function payorchestra(Request $request): JsonResponse
+    {
+        return $this->handleWebhook($request, 'payorchestra');
+    }
+
+    /**
      * Process a webhook from any provider.
      */
     protected function handleWebhook(Request $request, string $providerName): JsonResponse

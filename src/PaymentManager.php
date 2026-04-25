@@ -16,6 +16,7 @@ use Moffhub\Billing\Providers\KcbBuniProvider;
 use Moffhub\Billing\Providers\ManualProvider;
 use Moffhub\Billing\Providers\MpesaProvider;
 use Moffhub\Billing\Providers\NcbaProvider;
+use Moffhub\Billing\Providers\PayOrchestraProvider;
 use Moffhub\Billing\Providers\PaystackProvider;
 use Moffhub\Billing\Providers\PesapalProvider;
 use Moffhub\Billing\Providers\StanbicProvider;
@@ -220,6 +221,22 @@ class PaymentManager extends Manager
     }
 
     /**
+     * Create the PayOrchestra payment driver (multi-channel orchestration backbone).
+     */
+    public function createPayorchestraDriver(): PaymentProviderInterface
+    {
+        $config = $this->app['config']['billing.providers.payorchestra'] ?? [];
+
+        return new PayOrchestraProvider(
+            apiKey: $config['api_key'] ?? '',
+            orgId: $config['org_id'] ?? '',
+            webhookSecret: $config['webhook_secret'] ?? '',
+            baseUrl: $config['base_url'] ?? 'https://backbone.payorchestra.com',
+            timeout: (int) ($config['timeout'] ?? 30),
+        );
+    }
+
+    /**
      * Create the manual/offline payment driver.
      */
     public function createManualDriver(): PaymentProviderInterface
@@ -239,7 +256,7 @@ class PaymentManager extends Manager
      */
     public function getAvailableProviders(): array
     {
-        return ['mpesa', 'paystack', 'flutterwave', 'pesapal', 'airtel', 'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba', 'intasend', 'manual'];
+        return ['payorchestra', 'mpesa', 'paystack', 'flutterwave', 'pesapal', 'airtel', 'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba', 'intasend', 'manual'];
     }
 
     /**
@@ -250,6 +267,7 @@ class PaymentManager extends Manager
         $config = $this->app['config']["billing.providers.{$provider}"] ?? [];
 
         return match ($provider) {
+            'payorchestra' => ! empty($config['api_key']) && ! empty($config['org_id']),
             'mpesa' => ! empty($config['consumer_key']) && ! empty($config['consumer_secret']),
             'paystack' => ! empty($config['secret_key']),
             'flutterwave' => ! empty($config['secret_key']),

@@ -82,8 +82,9 @@ class PaymentManagerTest extends BaseTestCase
         $this->assertContains('stanbic', $providers);
         $this->assertContains('ncba', $providers);
         $this->assertContains('intasend', $providers);
+        $this->assertContains('payorchestra', $providers);
         $this->assertContains('manual', $providers);
-        $this->assertCount(12, $providers);
+        $this->assertCount(13, $providers);
     }
 
     public function test_is_provider_configured_manual(): void

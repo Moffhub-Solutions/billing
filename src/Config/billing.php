@@ -20,8 +20,13 @@ return [
     |--------------------------------------------------------------------------
     |
     | The default payment provider to use when none is specified.
-    | Supported: "mpesa", "paystack", "flutterwave", "pesapal", "airtel",
-    |           "kcb", "jenga", "coopbank", "stanbic", "ncba", "intasend", "manual"
+    |
+    | Recommended: "payorchestra" — routes through the PayOrchestra backbone
+    | for multi-channel payments, smart routing, failover, and reconciliation.
+    |
+    | Standalone drivers (direct gateway integrations):
+    |   "mpesa", "paystack", "flutterwave", "pesapal", "airtel",
+    |   "kcb", "jenga", "coopbank", "stanbic", "ncba", "intasend", "manual"
     |
     */
     'default_provider' => env('BILLING_PROVIDER', 'mpesa'),
@@ -148,6 +153,14 @@ return [
     |--------------------------------------------------------------------------
     */
     'providers' => [
+
+        'payorchestra' => [
+            'base_url' => env('PAYORCHESTRA_URL', 'https://backbone.payorchestra.com'),
+            'api_key' => env('PAYORCHESTRA_API_KEY'),
+            'org_id' => env('PAYORCHESTRA_ORG_ID'),
+            'webhook_secret' => env('PAYORCHESTRA_WEBHOOK_SECRET'),
+            'timeout' => (int) env('PAYORCHESTRA_TIMEOUT', 30),
+        ],
 
         'mpesa' => [
             'consumer_key' => env('MPESA_CONSUMER_KEY'),

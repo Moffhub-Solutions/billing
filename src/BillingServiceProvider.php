@@ -99,6 +99,8 @@ class BillingServiceProvider extends ServiceProvider
                 Console\Commands\ProcessRenewalsCommand::class,
                 Console\Commands\ProcessInvoicesCommand::class,
                 Console\Commands\MpesaSetupCommand::class,
+                Console\Commands\ReconcileWithPayOrchestraCommand::class,
+                Console\Commands\PayOrchestraSmokeTestCommand::class,
             ]);
         }
 
@@ -279,6 +281,7 @@ class BillingServiceProvider extends ServiceProvider
                 Route::post('/stanbic', [WebhookController::class, 'stanbic'])->name('billing.webhooks.stanbic');
                 Route::post('/ncba', [WebhookController::class, 'ncba'])->name('billing.webhooks.ncba');
                 Route::post('/intasend', [WebhookController::class, 'intasend'])->name('billing.webhooks.intasend');
+                Route::post('/payorchestra', [WebhookController::class, 'payorchestra'])->name('billing.webhooks.payorchestra');
             });
     }
 

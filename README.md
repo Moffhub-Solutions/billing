@@ -2,7 +2,7 @@
 
 Feature-based subscription billing for Laravel with first-class African payment provider support.
 
-Define plans, gate features, track usage, accept payments via M-Pesa, Airtel Money, KCB, Equity, Co-op Bank, Stanbic, NCBA, IntaSend, Paystack, Flutterwave, or Pesapal — all through one package.
+Define plans, gate features, track usage, accept payments via PayOrchestra (orchestration backbone with smart routing, failover, and reconciliation) or directly through M-Pesa, Airtel Money, KCB, Equity, Co-op Bank, Stanbic, NCBA, IntaSend, Paystack, Flutterwave, or Pesapal — all through one package.
 
 ---
 
@@ -14,7 +14,7 @@ This package gives you:
 
 - **Feature gating** — gate routes by feature slug, not plan name. Plans are just bundles of features.
 - **Usage metering** — track and enforce limits on metered features (API calls, OCR scans, entries/month)
-- **Provider-agnostic payments** — M-Pesa, Airtel Money, KCB BUNI, Equity Jenga, Co-op Bank, Stanbic, NCBA, IntaSend, Paystack, Flutterwave, Pesapal, or manual/cash — 12 providers behind one interface
+- **Provider-agnostic payments** — PayOrchestra orchestration backbone, plus 12 standalone drivers: M-Pesa, Airtel Money, KCB BUNI, Equity Jenga, Co-op Bank, Stanbic, NCBA, IntaSend, Paystack, Flutterwave, Pesapal, or manual/cash — 13 providers behind one interface
 - **Subscription lifecycle** — trials, renewals, cancellation, pause/resume, plan upgrades with proration
 - **Invoicing** — auto-generated invoices with line items, tax calculation, sequential numbering
 - **Full REST API** — 32 endpoints for managing plans, subscriptions, usage, payments, and invoices
@@ -204,6 +204,26 @@ $result = $manager->driver('coopbank')->charge(100000, 'KES', [
     'bank_code' => '01',           // KCB
     'transfer_type' => 'pesalink',
 ]);
+
+// Route through PayOrchestra — channel hint picks the right connector
+$result = $company->chargeVia('mpesa', 750000, 'KES', [
+    'phone' => '254712345678',
+    'reference' => 'INV-001',
+]);
+
+$result = $company->chargeVia('card', 750000, 'KES', [
+    'email' => 'customer@example.com',
+    'reference' => 'INV-001',
+]);
+
+// PayOrchestra hosted checkout — redirect the payer
+$session = $company->hostedPayment(750000, 'KES', [
+    'description' => 'Invoice #INV-001',
+    'success_url' => 'https://app.example.com/payment/success',
+    'cancel_url' => 'https://app.example.com/payment/cancel',
+]);
+
+return redirect($session['session_url']);
 ```
 
 ### 9. Generate Invoices
@@ -239,7 +259,7 @@ The package ships with a full REST API. All endpoints are documented in [docs/AP
 | Usage | 3 | Summary, detail, record |
 | Payments | 4 | List, initiate, show, refund |
 | Invoices | 6 | List, create, show, send, void, mark-paid |
-| Webhooks | 11 | M-Pesa, Paystack, Flutterwave, Pesapal, Airtel, KCB, Jenga, Co-op, Stanbic, NCBA, IntaSend callbacks |
+| Webhooks | 12 | M-Pesa, Paystack, Flutterwave, Pesapal, Airtel, KCB, Jenga, Co-op, Stanbic, NCBA, IntaSend, PayOrchestra callbacks |
 
 Routes are configurable:
 
@@ -259,6 +279,7 @@ Routes are configurable:
 
 | Provider | Driver | Payment Methods |
 |----------|--------|-----------------|
+| **PayOrchestra** ⭐ | `payorchestra` | Multi-channel via backbone — routes to M-Pesa, cards, bank transfers, etc. with smart routing, failover, reconciliation, hosted checkout |
 | **M-Pesa** | `mpesa` | STK Push, C2B, B2C |
 | **Airtel Money** | `airtel` | C2B collections, B2C disbursements |
 | **KCB BUNI** | `kcb` | M-Pesa, Airtel, T-Kash, VOOMA, bank (multi-channel) |
@@ -371,6 +392,12 @@ return [
     ],
 
     'providers' => [
+        'payorchestra' => [
+            'base_url' => env('PAYORCHESTRA_URL', 'https://backbone.payorchestra.com'),
+            'api_key' => env('PAYORCHESTRA_API_KEY'),
+            'org_id' => env('PAYORCHESTRA_ORG_ID'),
+            'webhook_secret' => env('PAYORCHESTRA_WEBHOOK_SECRET'),
+        ],
         'mpesa' => [
             'consumer_key' => env('MPESA_CONSUMER_KEY'),
             'consumer_secret' => env('MPESA_CONSUMER_SECRET'),
@@ -423,12 +450,12 @@ composer install
 vendor/bin/phpunit
 ```
 
-**670 tests, 1,713 assertions** covering:
+**716 tests, 1,840 assertions** covering:
 - Plan CRUD, feature checking, limits
 - Subscription lifecycle (create, trial, cancel, pause/resume)
 - Feature gating via Billable trait
 - Usage recording, deduplication, limit enforcement
-- All 12 payment providers (charge, refund, status, webhooks)
+- All 13 payment providers (charge, refund, status, webhooks) including PayOrchestra orchestration
 - Invoice generation, tax calculation, proration
 - Coupon and promotion code logic
 - Admin bypass, encryption, event dispatching

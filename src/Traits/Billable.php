@@ -10,6 +10,8 @@ use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\Models\PaymentToken;
 use Moffhub\Billing\Models\Subscription;
 use Moffhub\Billing\Models\UsageRecord;
+use Moffhub\Billing\PaymentManager;
+use Moffhub\Billing\Providers\PayOrchestraProvider;
 use Moffhub\Billing\Services\SubscriptionBuilder;
 
 trait Billable
@@ -207,5 +209,53 @@ trait Billable
         }
 
         return $this->usage($featureSlug) / $limit;
+    }
+
+    /**
+     * Charge via the PayOrchestra backbone with an explicit channel hint.
+     *
+     * The PayOrchestra driver routes the request to the appropriate connector
+     * (M-Pesa STK push, card processor, bank transfer, etc.) based on the
+     * channel and the rules configured in the PayOrchestra control plane.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array{success: bool, provider_payment_id: string|null, provider_reference: string|null, status: string, metadata: array<string, mixed>}
+     */
+    public function chargeVia(string $channel, int $amount, string $currency, array $options = []): array
+    {
+        $options['channel'] = $channel;
+        $options['metadata'] = array_merge($options['metadata'] ?? [], [
+            'billable_type' => static::class,
+            'billable_id' => $this->getKey(),
+        ]);
+
+        return app(PaymentManager::class)
+            ->driver('payorchestra')
+            ->charge($amount, $currency, $options);
+    }
+
+    /**
+     * Create a PayOrchestra hosted payment session.
+     *
+     * Returns a URL the consumer can redirect the payer to, where PayOrchestra
+     * presents a hosted checkout that supports every installed channel.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array{success: bool, session_url: string|null, session_id: string|null, expires_at: string|null}
+     */
+    public function hostedPayment(int $amount, string $currency, array $options = []): array
+    {
+        $provider = app(PaymentManager::class)->driver('payorchestra');
+
+        if (! $provider instanceof PayOrchestraProvider) {
+            throw new \RuntimeException('Hosted payments require the payorchestra driver.');
+        }
+
+        $options['metadata'] = array_merge($options['metadata'] ?? [], [
+            'billable_type' => static::class,
+            'billable_id' => $this->getKey(),
+        ]);
+
+        return $provider->createHostedSession($amount, $currency, $options);
     }
 }

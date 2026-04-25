@@ -1,0 +1,169 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Moffhub\Billing\Tests\Feature;
+
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
+use Moffhub\Billing\Enums\PaymentStatus;
+use Moffhub\Billing\Events\PaymentReceived;
+use Moffhub\Billing\Models\Payment;
+use Moffhub\Billing\Tests\BaseTestCase;
+use Moffhub\Billing\Tests\Fixtures\Models\Company;
+
+class PayOrchestraWebhookTest extends BaseTestCase
+{
+    #[\Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'billing.providers.payorchestra' => [
+                'api_key' => 'po_test_xxx',
+                'org_id' => 'org_test',
+                'webhook_secret' => 'whsec_test',
+                'base_url' => 'https://backbone.test',
+            ],
+        ]);
+    }
+
+    public function test_completed_webhook_marks_payment_paid_and_dispatches_event(): void
+    {
+        Event::fake([PaymentReceived::class]);
+
+        $company = Company::create(['name' => 'Backbone Co']);
+        $payment = $this->createPendingPayment($company, 'pi_123');
+
+        $body = [
+            'event' => 'payment_intent.completed',
+            'data' => [
+                'id' => 'pi_123',
+                'reference_code' => 'PO-REF-1',
+                'status' => 'completed',
+                'amount' => 10000,
+                'currency' => 'KES',
+                'channel' => 'mpesa',
+                'paid_at' => '2026-04-25T10:15:00Z',
+                'metadata' => ['invoice_id' => 42],
+            ],
+        ];
+
+        $this->postSignedWebhook($body)
+            ->assertOk()
+            ->assertJsonPath('status', 'received');
+
+        $payment->refresh();
+
+        $this->assertSame(PaymentStatus::COMPLETED, $payment->status);
+        $this->assertNotNull($payment->paid_at);
+        $this->assertSame('PO-REF-1', $payment->provider_reference);
+        $this->assertSame('mpesa', $payment->metadata['channel']);
+
+        Event::assertDispatched(
+            PaymentReceived::class,
+            fn (PaymentReceived $event) => $event->payment->id === $payment->id
+                && $event->billable->is($company)
+        );
+    }
+
+    public function test_webhook_rejects_invalid_signature(): void
+    {
+        $company = Company::create(['name' => 'Backbone Co']);
+        $this->createPendingPayment($company, 'pi_456');
+
+        $body = [
+            'event' => 'payment_intent.completed',
+            'data' => ['id' => 'pi_456', 'status' => 'completed', 'amount' => 1000, 'currency' => 'KES'],
+        ];
+
+        $this->postJson('/billing/webhooks/payorchestra', $body, [
+            'X-PayOrchestra-Signature' => 'invalid',
+        ])->assertStatus(403);
+    }
+
+    public function test_webhook_processing_is_idempotent(): void
+    {
+        Event::fake([PaymentReceived::class]);
+
+        $company = Company::create(['name' => 'Backbone Co']);
+        $payment = $this->createPendingPayment($company, 'pi_789');
+
+        $body = [
+            'event' => 'payment_intent.completed',
+            'data' => [
+                'id' => 'pi_789',
+                'reference_code' => 'PO-REF-2',
+                'status' => 'completed',
+                'amount' => 10000,
+                'currency' => 'KES',
+            ],
+        ];
+
+        $this->postSignedWebhook($body)->assertOk();
+        $this->postSignedWebhook($body)->assertOk();
+
+        Event::assertDispatchedTimes(PaymentReceived::class, 1);
+        $this->assertSame(PaymentStatus::COMPLETED, $payment->fresh()->status);
+    }
+
+    public function test_pending_status_is_acknowledged_but_not_applied(): void
+    {
+        Event::fake([PaymentReceived::class]);
+
+        $company = Company::create(['name' => 'Backbone Co']);
+        $payment = $this->createPendingPayment($company, 'pi_pending');
+
+        $body = [
+            'event' => 'payment_intent.processing',
+            'data' => [
+                'id' => 'pi_pending',
+                'status' => 'processing',
+                'amount' => 10000,
+                'currency' => 'KES',
+            ],
+        ];
+
+        $this->postSignedWebhook($body)->assertOk();
+
+        $this->assertSame(PaymentStatus::PENDING, $payment->fresh()->status);
+        Event::assertNotDispatched(PaymentReceived::class);
+    }
+
+    protected function postSignedWebhook(array $body): \Illuminate\Testing\TestResponse
+    {
+        $payload = json_encode($body, JSON_THROW_ON_ERROR);
+        $signature = hash_hmac('sha256', $payload, 'whsec_test');
+
+        return $this->call(
+            'POST',
+            '/billing/webhooks/payorchestra',
+            [],
+            [],
+            [],
+            [
+                'HTTP_X_PAYORCHESTRA_SIGNATURE' => $signature,
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+            ],
+            $payload,
+        );
+    }
+
+    protected function createPendingPayment(Company $company, string $providerPaymentId): Payment
+    {
+        $payment = new Payment([
+            'ulid' => Str::ulid()->toBase32(),
+            'amount' => 10000,
+            'currency' => 'KES',
+            'status' => PaymentStatus::PENDING,
+            'payment_provider' => 'payorchestra',
+            'provider_payment_id' => $providerPaymentId,
+        ]);
+
+        $company->payments()->save($payment);
+
+        return $payment->fresh();
+    }
+}
