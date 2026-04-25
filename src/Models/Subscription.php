@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 use Moffhub\Billing\Database\Factories\SubscriptionFactory;
 use Moffhub\Billing\Enums\SubscriptionStatus;
 use Moffhub\Billing\Events\SubscriptionPaused;
@@ -22,22 +24,22 @@ use Moffhub\Billing\Events\SubscriptionResumed;
  * @property int $billable_id
  * @property int $plan_id
  * @property SubscriptionStatus $status
- * @property \Illuminate\Support\Carbon|null $trial_ends_at
- * @property \Illuminate\Support\Carbon|null $current_period_start
- * @property \Illuminate\Support\Carbon|null $current_period_end
- * @property \Illuminate\Support\Carbon|null $cancelled_at
- * @property \Illuminate\Support\Carbon|null $paused_at
- * @property \Illuminate\Support\Carbon|null $resumed_at
+ * @property Carbon|null $trial_ends_at
+ * @property Carbon|null $current_period_start
+ * @property Carbon|null $current_period_end
+ * @property Carbon|null $cancelled_at
+ * @property Carbon|null $paused_at
+ * @property Carbon|null $resumed_at
  * @property string|null $payment_provider
  * @property string|null $provider_subscription_id
  * @property array<string, mixed>|null $metadata
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
- * @property-read \Illuminate\Database\Eloquent\Model $billable
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
+ * @property-read Model $billable
  * @property-read Plan $plan
- * @property-read \Illuminate\Database\Eloquent\Collection<int, SubscriptionAddon> $addons
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Payment> $payments
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Invoice> $invoices
+ * @property-read Collection<int, SubscriptionAddon> $addons
+ * @property-read Collection<int, Payment> $payments
+ * @property-read Collection<int, Invoice> $invoices
  */
 class Subscription extends Model
 {

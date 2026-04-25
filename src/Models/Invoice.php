@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 use Moffhub\Billing\Database\Factories\InvoiceFactory;
 use Moffhub\Billing\Enums\InvoiceStatus;
 
@@ -26,16 +28,16 @@ use Moffhub\Billing\Enums\InvoiceStatus;
  * @property int $total
  * @property string $currency
  * @property float $tax_rate
- * @property \Illuminate\Support\Carbon|null $due_date
- * @property \Illuminate\Support\Carbon|null $paid_at
+ * @property Carbon|null $due_date
+ * @property Carbon|null $paid_at
  * @property array<string, mixed>|null $metadata
  * @property string|null $notes
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
- * @property-read \Illuminate\Database\Eloquent\Model $billable
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
+ * @property-read Model $billable
  * @property-read Subscription|null $subscription
- * @property-read \Illuminate\Database\Eloquent\Collection<int, InvoiceItem> $items
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Payment> $payments
+ * @property-read Collection<int, InvoiceItem> $items
+ * @property-read Collection<int, Payment> $payments
  */
 class Invoice extends Model
 {

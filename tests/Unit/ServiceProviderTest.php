@@ -103,7 +103,7 @@ class ServiceProviderTest extends BaseTestCase
                 $now = now();
                 $i = 0;
 
-                foreach (static::MIGRATION_ORDER as $table) {
+                foreach (self::MIGRATION_ORDER as $table) {
                     if (! isset($available[$table])) {
                         continue;
                     }

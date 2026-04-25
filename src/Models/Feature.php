@@ -7,6 +7,7 @@ namespace Moffhub\Billing\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Moffhub\Billing\Database\Factories\FeatureFactory;
 use Moffhub\Billing\Enums\BillingCycle;
 use Moffhub\Billing\Enums\FeatureType;
@@ -23,8 +24,8 @@ use Moffhub\Billing\Enums\FeatureType;
  * @property BillingCycle|null $addon_billing_cycle
  * @property bool $is_active
  * @property array<string, mixed>|null $metadata
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
  */
 class Feature extends Model
 {

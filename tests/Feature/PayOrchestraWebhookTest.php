@@ -6,6 +6,7 @@ namespace Moffhub\Billing\Tests\Feature;
 
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Events\PaymentReceived;
 use Moffhub\Billing\Models\Payment;
@@ -131,7 +132,7 @@ class PayOrchestraWebhookTest extends BaseTestCase
         Event::assertNotDispatched(PaymentReceived::class);
     }
 
-    protected function postSignedWebhook(array $body): \Illuminate\Testing\TestResponse
+    protected function postSignedWebhook(array $body): TestResponse
     {
         $payload = json_encode($body, JSON_THROW_ON_ERROR);
         $signature = hash_hmac('sha256', $payload, 'whsec_test');

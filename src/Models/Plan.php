@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Moffhub\Billing\Database\Factories\PlanFactory;
 use Moffhub\Billing\Enums\BillingCycle;
 
@@ -26,9 +28,9 @@ use Moffhub\Billing\Enums\BillingCycle;
  * @property array<int, string>|null $features
  * @property array<string, int>|null $limits
  * @property array<string, mixed>|null $metadata
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Subscription> $subscriptions
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
+ * @property-read Collection<int, Subscription> $subscriptions
  */
 class Plan extends Model
 {

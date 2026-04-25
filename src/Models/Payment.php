@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 use Moffhub\Billing\Database\Factories\PaymentFactory;
 use Moffhub\Billing\Enums\PaymentMethod;
 use Moffhub\Billing\Enums\PaymentStatus;
@@ -27,12 +28,12 @@ use Moffhub\Billing\Enums\PaymentStatus;
  * @property string|null $provider_reference
  * @property PaymentMethod|null $payment_method
  * @property array<string, mixed>|null $metadata
- * @property \Illuminate\Support\Carbon|null $paid_at
- * @property \Illuminate\Support\Carbon|null $failed_at
- * @property \Illuminate\Support\Carbon|null $refunded_at
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
- * @property-read \Illuminate\Database\Eloquent\Model $billable
+ * @property Carbon|null $paid_at
+ * @property Carbon|null $failed_at
+ * @property Carbon|null $refunded_at
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
+ * @property-read Model $billable
  * @property-read Subscription|null $subscription
  * @property-read Invoice|null $invoice
  */
