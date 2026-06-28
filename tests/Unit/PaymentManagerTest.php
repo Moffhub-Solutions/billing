@@ -141,6 +141,37 @@ class PaymentManagerTest extends BaseTestCase
         ], $options);
     }
 
+    public function test_payment_options_include_cash_by_default(): void
+    {
+        $this->setConfig('billing.enabled_providers', []);
+
+        $providers = array_column($this->manager->getPaymentOptions(), 'provider');
+
+        $this->assertContains('manual', $providers);
+    }
+
+    public function test_offer_cash_false_hides_manual_from_options(): void
+    {
+        $this->setConfig('billing.enabled_providers', []);
+        $this->setConfig('billing.offer_cash', false);
+
+        $providers = array_column($this->manager->getPaymentOptions(), 'provider');
+
+        $this->assertNotContains('manual', $providers);
+    }
+
+    public function test_offer_cash_false_still_honors_explicit_manual_in_curated_list(): void
+    {
+        $this->setConfig('billing.providers.mpesa', ['consumer_key' => 'k', 'consumer_secret' => 's']);
+        $this->setConfig('billing.enabled_providers', ['mpesa', 'manual']);
+        $this->setConfig('billing.offer_cash', false);
+
+        $providers = array_column($this->manager->getPaymentOptions(), 'provider');
+
+        // Operator explicitly listed manual, so the toggle does not strip it.
+        $this->assertContains('manual', $providers);
+    }
+
     public function test_is_provider_configured_mpesa_missing(): void
     {
         // No mpesa config set

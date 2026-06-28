@@ -15,6 +15,7 @@ use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Events\PaymentFailed;
 use Moffhub\Billing\Events\PaymentReceived;
+use Moffhub\Billing\Models\Invoice;
 use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\PaymentManager;
 use Moffhub\Billing\Services\SplitPaymentService;
@@ -305,8 +306,12 @@ class WebhookController extends Controller
         }
 
         if ($payment->invoice_id !== null) {
-            $payment->loadMissing('invoice');
-            $payment->invoice?->recalculateStatus();
+            // Lock the invoice while recalculating so concurrent tranche webhooks
+            // settling the same invoice can't race on its status.
+            DB::transaction(function () use ($payment): void {
+                $invoice = Invoice::query()->lockForUpdate()->find($payment->invoice_id);
+                $invoice?->recalculateStatus();
+            });
         }
 
         if (! $payment->isSplit()) {

@@ -259,7 +259,7 @@ class TkashProviderTest extends BaseTestCase
 
         $result = $this->provider->registerUrls();
 
-        $this->assertIsArray($result);
+        $this->assertArrayHasKey('response', $result);
         Http::assertSent(fn ($request): bool => str_contains($request->url(), 'consumer/v3/registerurl'));
     }
 

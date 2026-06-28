@@ -79,6 +79,23 @@ class SplitPaymentService
         // manual) that settle immediately, advance through the chain now.
         $first = $payments[0];
         $result = $this->collectTranche($first, $billable, $options);
+
+        // If the first tranche cannot be initiated, fail the whole group so no
+        // orphan pending tranches remain collectible or auto-advanceable. The
+        // outcome is deterministic: either the group is established and started,
+        // or nothing is left in a chargeable state.
+        if (! $result['success']) {
+            $this->failGroup($group);
+
+            return [
+                'split' => $isSplit,
+                'group' => $group,
+                'tranche_count' => count($tranches),
+                'payments' => array_map(fn (Payment $p): Payment => $p->refresh(), $payments),
+                'success' => false,
+            ];
+        }
+
         $this->advanceSynchronously($first->refresh(), $billable, $options);
 
         return [
@@ -88,6 +105,26 @@ class SplitPaymentService
             'payments' => array_map(fn (Payment $p): Payment => $p->refresh(), $payments),
             'success' => $result['success'],
         ];
+    }
+
+    /**
+     * Mark every still-pending tranche of a group as failed. Used when the
+     * group's first tranche could not be initiated, so the group never lingers
+     * in a half-started state. No-op for unsplit (groupless) payments.
+     */
+    protected function failGroup(?string $group): void
+    {
+        if ($group === null) {
+            return;
+        }
+
+        Payment::query()
+            ->where('payment_group', $group)
+            ->where('status', PaymentStatus::PENDING->value)
+            ->update([
+                'status' => PaymentStatus::FAILED->value,
+                'failed_at' => now(),
+            ]);
     }
 
     /**
@@ -160,15 +197,26 @@ class SplitPaymentService
     }
 
     /**
-     * Count transactions already consumed today for the daily cap: pending or
-     * completed payments for this billable + provider (failed ones don't count).
+     * Count provider transactions already consumed today for the daily cap.
+     *
+     * Counts what has actually reached the provider: completed payments, plus
+     * pending payments that were genuinely initiated (have a provider payment
+     * id). Pending tranches still awaiting collection (never charged) and failed
+     * payments do not count, so an abandoned split group can't block the
+     * billable's remaining daily allowance.
      */
     public function usedToday(Model&BillableInterface $billable, string $provider): int
     {
         return $billable->payments()
             ->where('payment_provider', $provider)
-            ->whereIn('status', [PaymentStatus::PENDING->value, PaymentStatus::COMPLETED->value])
             ->where('created_at', '>=', Carbon::today())
+            ->where(function ($query): void {
+                $query->where('status', PaymentStatus::COMPLETED->value)
+                    ->orWhere(function ($pending): void {
+                        $pending->where('status', PaymentStatus::PENDING->value)
+                            ->whereNotNull('provider_payment_id');
+                    });
+            })
             ->count();
     }
 

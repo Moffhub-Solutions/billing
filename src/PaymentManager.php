@@ -324,11 +324,23 @@ class PaymentManager extends Manager
      */
     public function getPaymentOptions(): array
     {
+        $providers = $this->getEnabledProviders();
+
+        // Cash (the manual provider) is always offered unless explicitly turned
+        // off via billing.offer_cash. An explicit enabled_providers list that
+        // names "manual" still wins, since the operator opted in deliberately.
+        $curated = $this->config()->get('billing.enabled_providers', []);
+        $manualCurated = is_array($curated) && in_array('manual', $curated, true);
+
+        if (! $manualCurated && ! (bool) $this->config()->get('billing.offer_cash', true)) {
+            $providers = array_values(array_filter($providers, fn (string $p): bool => $p !== 'manual'));
+        }
+
         return array_map(fn (string $provider): array => [
             'provider' => $provider,
             'label' => $this->providerLabel($provider),
             'method' => $this->providerMethod($provider)->value,
-        ], $this->getEnabledProviders());
+        ], $providers);
     }
 
     /**

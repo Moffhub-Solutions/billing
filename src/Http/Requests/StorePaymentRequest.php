@@ -22,6 +22,13 @@ class StorePaymentRequest extends FormRequest
         $enabled = $manager->getEnabledProviders();
         $allowedProviders = $enabled !== [] ? $enabled : $manager->getAvailableProviders();
 
+        // The default provider is always permitted (the controller allows it for
+        // server-initiated charges), so a curated list never blocks it here.
+        $defaultProvider = config('billing.default_provider');
+        if (is_string($defaultProvider) && $defaultProvider !== '' && ! in_array($defaultProvider, $allowedProviders, true)) {
+            $allowedProviders[] = $defaultProvider;
+        }
+
         $allowedMethods = array_map(fn (PaymentMethod $m): string => $m->value, PaymentMethod::cases());
 
         return [

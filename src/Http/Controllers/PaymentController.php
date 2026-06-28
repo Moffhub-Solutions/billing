@@ -159,7 +159,9 @@ class PaymentController extends BillingController
             return response()->json(['message' => 'No billable entity found.'], 404);
         }
 
-        $paymentModel = Payment::query()->findOrFail($payment);
+        // Scope to the caller's billable so one tenant cannot initiate a charge
+        // against another tenant's payment.
+        $paymentModel = $billable->payments()->findOrFail($payment);
 
         if (! $paymentModel->isPending()) {
             return response()->json(['message' => 'Only pending tranches can be collected.'], 422);
@@ -181,9 +183,16 @@ class PaymentController extends BillingController
     /**
      * Show a single payment.
      */
-    public function show(int $payment): JsonResponse
+    public function show(Request $request, int $payment): JsonResponse
     {
-        $paymentModel = Payment::query()->findOrFail($payment);
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        // Scope to the caller's billable so payments cannot be read cross-tenant.
+        $paymentModel = $billable->payments()->findOrFail($payment);
 
         return response()->json([
             'data' => new PaymentResource($paymentModel),
@@ -195,12 +204,19 @@ class PaymentController extends BillingController
      */
     public function refund(Request $request, int $payment): JsonResponse
     {
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
         $request->validate([
             'amount' => ['sometimes', 'integer', 'min:1'],
             'reason' => ['sometimes', 'string', 'max:500'],
         ]);
 
-        $paymentModel = Payment::query()->findOrFail($payment);
+        // Scope to the caller's billable so one tenant cannot refund another's payment.
+        $paymentModel = $billable->payments()->findOrFail($payment);
 
         if (! $paymentModel->isCompleted()) {
             return response()->json([

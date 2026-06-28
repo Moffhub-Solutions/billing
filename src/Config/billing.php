@@ -52,6 +52,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Offer Cash (Manual) at Checkout
+    |--------------------------------------------------------------------------
+    |
+    | Cash / manual settlement is offered in the checkout payment options by
+    | default. Set this to false to hide it from the customer-facing selector
+    | (it remains usable for server-initiated and back-office charges). An
+    | explicit "manual" entry in BILLING_ENABLED_PROVIDERS always overrides this.
+    |
+    */
+    'offer_cash' => env('BILLING_OFFER_CASH', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Billable Model
     |--------------------------------------------------------------------------
     |

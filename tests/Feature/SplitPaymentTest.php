@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Tests\Feature;
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Enums\BillingCycle;
 use Moffhub\Billing\Enums\InvoiceStatus;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Models\Invoice;
 use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\Models\Plan;
+use Moffhub\Billing\PaymentManager;
 use Moffhub\Billing\Services\SplitPaymentService;
 use Moffhub\Billing\Tests\BaseTestCase;
 use Moffhub\Billing\Tests\Fixtures\Models\Company;
@@ -61,8 +64,11 @@ class SplitPaymentTest extends BaseTestCase
         $this->assertSame([2, 2], $tranches->pluck('group_size')->all());
 
         // First tranche was initiated, second is still awaiting collection.
-        $this->assertNotNull($tranches[0]->provider_payment_id);
-        $this->assertNull($tranches[1]->provider_payment_id);
+        $group = (string) $result['group'];
+        $first = Payment::query()->where('payment_group', $group)->where('group_sequence', 1)->firstOrFail();
+        $second = Payment::query()->where('payment_group', $group)->where('group_sequence', 2)->firstOrFail();
+        $this->assertNotNull($first->provider_payment_id);
+        $this->assertNull($second->provider_payment_id);
     }
 
     public function test_amount_within_limit_is_not_split(): void
@@ -80,12 +86,12 @@ class SplitPaymentTest extends BaseTestCase
     public function test_advance_initiates_next_tranche_when_one_completes(): void
     {
         $result = $this->service()->process($this->company, 'manual', 75_000_000, 'KES'); // 3 tranches
-        $tranches = Payment::query()->where('payment_group', $result['group'])->orderBy('group_sequence')->get();
+        $first = Payment::query()->where('payment_group', $result['group'])->where('group_sequence', 1)->firstOrFail();
 
         // Simulate the first tranche settling (as a webhook would).
-        $tranches[0]->forceFill(['status' => PaymentStatus::COMPLETED, 'paid_at' => now()])->save();
+        $first->forceFill(['status' => PaymentStatus::COMPLETED, 'paid_at' => now()])->save();
 
-        $next = $this->service()->advance($tranches[0]->refresh(), $this->company);
+        $next = $this->service()->advance($first->refresh(), $this->company);
 
         $this->assertNotNull($next);
         $this->assertSame(2, $next->group_sequence);
@@ -97,12 +103,13 @@ class SplitPaymentTest extends BaseTestCase
         $this->setConfig('billing.split_payments.auto_advance', false);
 
         $result = $this->service()->process($this->company, 'manual', 50_000_000, 'KES');
-        $tranches = Payment::query()->where('payment_group', $result['group'])->orderBy('group_sequence')->get();
-        $tranches[0]->forceFill(['status' => PaymentStatus::COMPLETED])->save();
+        $first = Payment::query()->where('payment_group', $result['group'])->where('group_sequence', 1)->firstOrFail();
+        $second = Payment::query()->where('payment_group', $result['group'])->where('group_sequence', 2)->firstOrFail();
+        $first->forceFill(['status' => PaymentStatus::COMPLETED])->save();
 
-        $this->assertNull($this->service()->advance($tranches[0]->refresh(), $this->company));
+        $this->assertNull($this->service()->advance($first->refresh(), $this->company));
         // Second tranche untouched.
-        $this->assertNull($tranches[1]->refresh()->provider_payment_id);
+        $this->assertNull($second->refresh()->provider_payment_id);
     }
 
     public function test_used_today_counts_toward_daily_cap(): void
@@ -125,6 +132,100 @@ class SplitPaymentTest extends BaseTestCase
             'payment_provider' => 'manual',
         ]);
         $this->assertSame(1, $this->service()->usedToday($this->company, 'manual'));
+    }
+
+    public function test_uninitiated_pending_tranche_does_not_count_toward_daily_cap(): void
+    {
+        // A pending tranche awaiting collection (never charged: no provider
+        // payment id) must not consume the daily allowance.
+        $this->company->payments()->create([
+            'ulid' => Str::ulid()->toBase32(),
+            'amount' => 25_000_000,
+            'currency' => 'KES',
+            'status' => PaymentStatus::PENDING,
+            'payment_provider' => 'manual',
+            'provider_payment_id' => null,
+        ]);
+
+        $this->assertSame(0, $this->service()->usedToday($this->company, 'manual'));
+
+        // An initiated pending tranche (charged) does count.
+        $this->company->payments()->create([
+            'ulid' => Str::ulid()->toBase32(),
+            'amount' => 25_000_000,
+            'currency' => 'KES',
+            'status' => PaymentStatus::PENDING,
+            'payment_provider' => 'manual',
+            'provider_payment_id' => 'manual_initiated',
+        ]);
+
+        $this->assertSame(1, $this->service()->usedToday($this->company, 'manual'));
+    }
+
+    public function test_failed_first_tranche_fails_the_whole_group(): void
+    {
+        // A driver that always rejects the charge.
+        $manager = app(PaymentManager::class);
+        $manager->extend('always_fail', fn (): PaymentProviderInterface => new class implements PaymentProviderInterface
+        {
+            public function charge(int $amount, string $currency, array $options = []): array
+            {
+                return [
+                    'success' => false,
+                    'provider_payment_id' => null,
+                    'provider_reference' => null,
+                    'status' => 'failed',
+                    'metadata' => ['error' => 'rejected'],
+                ];
+            }
+
+            public function refund(string $providerPaymentId, ?int $amount = null, array $options = []): array
+            {
+                return ['success' => false, 'provider_refund_id' => null, 'status' => 'failed', 'metadata' => []];
+            }
+
+            public function getPaymentStatus(string $providerPaymentId): string
+            {
+                return 'failed';
+            }
+
+            public function verifyWebhook(Request $request): bool
+            {
+                return false;
+            }
+
+            public function parseWebhook(Request $request): array
+            {
+                return ['event' => 'payment.failed', 'provider_payment_id' => null, 'status' => 'failed', 'amount' => null, 'currency' => null, 'metadata' => []];
+            }
+
+            public function isConfigured(): bool
+            {
+                return true;
+            }
+
+            public function getName(): string
+            {
+                return 'always_fail';
+            }
+        });
+
+        $this->setConfig('billing.providers.always_fail.limits', ['max_amount' => 25_000_000]);
+
+        $result = $this->service()->process($this->company, 'always_fail', 50_000_000, 'KES');
+
+        $this->assertFalse($result['success']);
+
+        // No tranche is left pending/collectible: the whole group is failed.
+        $statuses = Payment::query()
+            ->where('payment_group', $result['group'])
+            ->pluck('status')
+            ->all();
+
+        $this->assertNotEmpty($statuses);
+        foreach ($statuses as $status) {
+            $this->assertSame(PaymentStatus::FAILED, $status);
+        }
     }
 
     // ─── Invoice settlement ────────────────────────────────────────────
@@ -165,13 +266,14 @@ class SplitPaymentTest extends BaseTestCase
 
         $makeTranche(1);
         $invoice->recalculateStatus();
-        $this->assertSame(InvoiceStatus::PARTIALLY_PAID, $invoice->fresh()?->status);
+        $invoice->refresh();
+        $this->assertSame(InvoiceStatus::PARTIALLY_PAID, $invoice->status);
 
         $makeTranche(2);
         $invoice->recalculateStatus();
-        $fresh = $invoice->fresh();
-        $this->assertSame(InvoiceStatus::PAID, $fresh?->status);
-        $this->assertNotNull($fresh?->paid_at);
+        $invoice->refresh();
+        $this->assertSame(InvoiceStatus::PAID, $invoice->status);
+        $this->assertNotNull($invoice->paid_at);
     }
 
     // ─── API ───────────────────────────────────────────────────────────

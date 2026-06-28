@@ -150,7 +150,8 @@ class PaymentApiTest extends BaseTestCase
             ->getJson('/api/billing/payments/options');
 
         $response->assertOk();
-        $providers = array_column($response->json('data'), 'provider');
+        $data = $response->json('data');
+        $providers = is_array($data) ? array_column($data, 'provider') : [];
         $this->assertContains('mpesa', $providers);
         $this->assertContains('airtel', $providers);
         $this->assertContains('manual', $providers);
@@ -279,7 +280,8 @@ class PaymentApiTest extends BaseTestCase
     {
         $payment = $this->createPayment($this->company, PaymentStatus::COMPLETED);
 
-        $response = $this->getJson("/api/billing/payments/{$payment->id}");
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/billing/payments/{$payment->id}");
 
         $response->assertOk()
             ->assertJsonPath('data.amount', 250000)
@@ -291,7 +293,20 @@ class PaymentApiTest extends BaseTestCase
 
     public function test_show_payment_not_found(): void
     {
-        $response = $this->getJson('/api/billing/payments/99999');
+        $response = $this->actingAs($this->user)
+            ->getJson('/api/billing/payments/99999');
+
+        $response->assertNotFound();
+    }
+
+    public function test_show_payment_rejects_other_billables_payment(): void
+    {
+        $otherCompany = Company::create(['name' => 'Other Co']);
+        $payment = $this->createPayment($otherCompany, PaymentStatus::COMPLETED);
+
+        // Acting as our user must not expose another billable's payment.
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/billing/payments/{$payment->id}");
 
         $response->assertNotFound();
     }
@@ -302,7 +317,8 @@ class PaymentApiTest extends BaseTestCase
     {
         $payment = $this->createPayment($this->company, PaymentStatus::COMPLETED);
 
-        $response = $this->postJson("/api/billing/payments/{$payment->id}/refund");
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/billing/payments/{$payment->id}/refund");
 
         $response->assertOk()
             ->assertJsonPath('message', 'Payment refunded.')
@@ -316,7 +332,8 @@ class PaymentApiTest extends BaseTestCase
     {
         $payment = $this->createPayment($this->company, PaymentStatus::PENDING);
 
-        $response = $this->postJson("/api/billing/payments/{$payment->id}/refund");
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/billing/payments/{$payment->id}/refund");
 
         $response->assertUnprocessable()
             ->assertJsonPath('message', 'Only completed payments can be refunded.');
@@ -326,10 +343,11 @@ class PaymentApiTest extends BaseTestCase
     {
         $payment = $this->createPayment($this->company, PaymentStatus::COMPLETED);
 
-        $response = $this->postJson("/api/billing/payments/{$payment->id}/refund", [
-            'amount' => 100000,
-            'reason' => 'Partial refund for unused period',
-        ]);
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/billing/payments/{$payment->id}/refund", [
+                'amount' => 100000,
+                'reason' => 'Partial refund for unused period',
+            ]);
 
         $response->assertOk()
             ->assertJsonPath('message', 'Payment refunded.')
@@ -338,9 +356,24 @@ class PaymentApiTest extends BaseTestCase
 
     public function test_refund_payment_not_found(): void
     {
-        $response = $this->postJson('/api/billing/payments/99999/refund');
+        $response = $this->actingAs($this->user)
+            ->postJson('/api/billing/payments/99999/refund');
 
         $response->assertNotFound();
+    }
+
+    public function test_refund_payment_rejects_other_billables_payment(): void
+    {
+        $otherCompany = Company::create(['name' => 'Other Co']);
+        $payment = $this->createPayment($otherCompany, PaymentStatus::COMPLETED);
+
+        // Acting as our user must not be able to refund another billable's payment.
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/billing/payments/{$payment->id}/refund");
+
+        $response->assertNotFound();
+
+        $this->assertNull($payment->refresh()->refunded_at);
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────
