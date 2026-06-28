@@ -77,8 +77,10 @@ Route::prefix('usage')->group(function (): void {
 // ─── Payments ──────────────────────────────────────────────────────────
 Route::prefix('payments')->group(function (): void {
     Route::get('/', [PaymentController::class, 'index'])->name('billing.payments.index');
+    Route::get('/options', [PaymentController::class, 'options'])->name('billing.payments.options');
     Route::post('/', [PaymentController::class, 'store'])->name('billing.payments.store');
-    Route::get('/{payment}', [PaymentController::class, 'show'])->name('billing.payments.show');
+    Route::get('/{payment}', [PaymentController::class, 'show'])->whereNumber('payment')->name('billing.payments.show');
+    Route::post('/{payment}/collect', [PaymentController::class, 'collect'])->whereNumber('payment')->name('billing.payments.collect');
     Route::post('/{payment}/refund', [PaymentController::class, 'refund'])->name('billing.payments.refund');
 });
 

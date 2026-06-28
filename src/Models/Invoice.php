@@ -134,6 +134,44 @@ class Invoice extends Model
     }
 
     /**
+     * Total of completed payments against this invoice (in cents).
+     */
+    public function amountPaid(): int
+    {
+        return (int) $this->payments()
+            ->where('status', 'completed')
+            ->sum('amount');
+    }
+
+    /**
+     * Re-derive the invoice status from its completed payments.
+     *
+     * Moves the invoice to PAID once fully settled (stamping paid_at), or
+     * PARTIALLY_PAID while some, but not all, of the balance is covered. Used
+     * when split-payment tranches settle one tranche at a time. Terminal
+     * states (PAID, VOID) and credit notes are left untouched.
+     */
+    public function recalculateStatus(): void
+    {
+        if ($this->status === InvoiceStatus::PAID || $this->status === InvoiceStatus::VOID || $this->isCreditNote()) {
+            return;
+        }
+
+        $paid = $this->amountPaid();
+
+        if ($paid >= $this->total && $this->total > 0) {
+            $this->status = InvoiceStatus::PAID;
+            $this->paid_at = $this->paid_at ?? now();
+        } elseif ($paid > 0) {
+            $this->status = InvoiceStatus::PARTIALLY_PAID;
+        } else {
+            return;
+        }
+
+        $this->save();
+    }
+
+    /**
      * Get formatted total.
      */
     public function formattedTotal(): string

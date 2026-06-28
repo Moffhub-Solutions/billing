@@ -25,11 +25,30 @@ return [
     | for multi-channel payments, smart routing, failover, and reconciliation.
     |
     | Standalone drivers (direct gateway integrations):
-    |   "mpesa", "paystack", "flutterwave", "pesapal", "airtel",
+    |   "mpesa", "paystack", "flutterwave", "pesapal", "airtel", "tkash",
     |   "kcb", "jenga", "coopbank", "stanbic", "ncba", "intasend", "manual"
     |
     */
     'default_provider' => env('BILLING_PROVIDER', 'mpesa'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Enabled Payment Providers
+    |--------------------------------------------------------------------------
+    |
+    | The subset of providers offered to customers at checkout. The frontend
+    | reads these (via GET {prefix}/payments/options) to render a multi-option
+    | payment selector, and a charge is only accepted for a provider in this
+    | list. Order is preserved for display.
+    |
+    | Set a comma-separated list, e.g. BILLING_ENABLED_PROVIDERS=mpesa,airtel,tkash
+    | Leave empty to offer every configured provider automatically.
+    |
+    */
+    'enabled_providers' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('BILLING_ENABLED_PROVIDERS', ''))
+    ))),
 
     /*
     |--------------------------------------------------------------------------
@@ -149,6 +168,34 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Split Payments (transaction limits)
+    |--------------------------------------------------------------------------
+    |
+    | Providers cap how much a single transaction may carry (e.g. M-Pesa allows
+    | 250,000 KES per STK Push). When a charge exceeds a provider's limit, the
+    | package can split it into several tranche payments that share a payment
+    | group and settle one invoice.
+    |
+    | All amounts are in cents (the unit `amount` is stored in), so 250,000 KES
+    | is 25_000_000. Per-provider limits live under `providers.<name>.limits`:
+    |
+    |   'limits' => [
+    |       'max_amount'  => 25_000_000, // max cents per transaction (null = no cap)
+    |       'max_per_day' => 2,          // max transactions/day per billable (null = no cap)
+    |   ],
+    |
+    | `auto_advance` controls sequential collection: when true, completing one
+    | tranche (via webhook) initiates the next automatically. Set false to drive
+    | tranche collection yourself via POST {prefix}/payments/{id}/collect.
+    |
+    */
+    'split_payments' => [
+        'enabled' => env('BILLING_SPLIT_PAYMENTS', true),
+        'auto_advance' => env('BILLING_SPLIT_AUTO_ADVANCE', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Payment Providers
     |--------------------------------------------------------------------------
     */
@@ -175,6 +222,10 @@ return [
             'initiator_name' => env('MPESA_INITIATOR_NAME'),
             'initiator_password' => env('MPESA_INITIATOR_PASSWORD'),
             'certificate_path' => env('MPESA_CERTIFICATE_PATH'), // path to Safaricom .cer file
+            'limits' => [
+                'max_amount' => (int) env('MPESA_MAX_AMOUNT', 25_000_000),     // 250,000 KES per STK Push
+                'max_per_day' => env('MPESA_MAX_PER_DAY') !== null ? (int) env('MPESA_MAX_PER_DAY') : null,
+            ],
         ],
 
         'paystack' => [
@@ -209,6 +260,29 @@ return [
             'base_url' => env('AIRTEL_BASE_URL'), // auto-set based on environment if null
             'country' => env('AIRTEL_COUNTRY', 'KE'),
             'currency' => env('AIRTEL_CURRENCY', 'KES'),
+            'limits' => [
+                'max_amount' => (int) env('AIRTEL_MAX_AMOUNT', 15_000_000),    // 150,000 KES per transaction
+                'max_per_day' => env('AIRTEL_MAX_PER_DAY') !== null ? (int) env('AIRTEL_MAX_PER_DAY') : null,
+            ],
+        ],
+
+        'tkash' => [
+            'consumer_key' => env('TKASH_CONSUMER_KEY'),       // app consumer key (Basic auth)
+            'consumer_secret' => env('TKASH_CONSUMER_SECRET'), // app consumer secret (Basic auth)
+            'consumer_id' => env('TKASH_CONSUMER_ID'),         // merchant/paybill consumer id
+            'grant_username' => env('TKASH_GRANT_USERNAME'),   // authorizes token generation
+            'grant_password' => env('TKASH_GRANT_PASSWORD'),
+            'b2c_username' => env('TKASH_B2C_USERNAME'),       // required for disbursements/refunds
+            'b2c_password' => env('TKASH_B2C_PASSWORD'),
+            'environment' => env('TKASH_ENVIRONMENT', 'sandbox'), // sandbox(uat), dev, preprod, production(prod)
+            'callback_url' => env('TKASH_CALLBACK_URL'),       // C2B confirmation URL
+            'validation_url' => env('TKASH_VALIDATION_URL'),   // C2B validation URL
+            'base_url' => env('TKASH_BASE_URL'), // auto-set based on environment if null
+            'currency' => env('TKASH_CURRENCY', 'KES'),
+            'limits' => [
+                'max_amount' => (int) env('TKASH_MAX_AMOUNT', 15_000_000),     // 150,000 KES per transaction
+                'max_per_day' => env('TKASH_MAX_PER_DAY') !== null ? (int) env('TKASH_MAX_PER_DAY') : null,
+            ],
         ],
 
         'kcb' => [

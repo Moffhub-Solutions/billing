@@ -293,6 +293,7 @@ class BillingServiceProvider extends ServiceProvider
                 Route::post('/flutterwave', [WebhookController::class, 'flutterwave'])->name('billing.webhooks.flutterwave');
                 Route::post('/pesapal', [WebhookController::class, 'pesapal'])->name('billing.webhooks.pesapal');
                 Route::post('/airtel', [WebhookController::class, 'airtel'])->name('billing.webhooks.airtel');
+                Route::post('/tkash', [WebhookController::class, 'tkash'])->name('billing.webhooks.tkash');
                 Route::post('/kcb', [WebhookController::class, 'kcb'])->name('billing.webhooks.kcb');
                 Route::post('/jenga', [WebhookController::class, 'jenga'])->name('billing.webhooks.jenga');
                 Route::post('/coopbank', [WebhookController::class, 'coopbank'])->name('billing.webhooks.coopbank');
@@ -350,7 +351,7 @@ class BillingServiceProvider extends ServiceProvider
     {
         $providerValue = config('billing.default_provider');
         $provider = is_string($providerValue) ? $providerValue : '';
-        $validProviders = ['mpesa', 'paystack', 'flutterwave', 'pesapal', 'airtel', 'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba', 'intasend', 'manual'];
+        $validProviders = ['payorchestra', 'mpesa', 'paystack', 'flutterwave', 'pesapal', 'airtel', 'tkash', 'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba', 'intasend', 'manual'];
 
         if ($provider !== '' && ! in_array($provider, $validProviders, true)) {
             Log::warning("Billing: Unrecognized default provider '{$provider}'. Valid providers: ".implode(', ', $validProviders));

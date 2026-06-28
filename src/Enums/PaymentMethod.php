@@ -8,6 +8,7 @@ enum PaymentMethod: string
 {
     case MPESA = 'mpesa';
     case AIRTEL_MONEY = 'airtel_money';
+    case TKASH = 'tkash';
     case CARD = 'card';
     case BANK = 'bank';
     case MOBILE_MONEY = 'mobile_money';
@@ -18,6 +19,7 @@ enum PaymentMethod: string
         return match ($this) {
             self::MPESA => 'M-Pesa',
             self::AIRTEL_MONEY => 'Airtel Money',
+            self::TKASH => 'T-Kash',
             self::CARD => 'Card',
             self::BANK => 'Bank Transfer',
             self::MOBILE_MONEY => 'Mobile Money',

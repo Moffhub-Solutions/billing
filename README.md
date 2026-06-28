@@ -2,7 +2,7 @@
 
 Feature-based subscription billing for Laravel with first-class African payment provider support.
 
-Define plans, gate features, track usage, accept payments via PayOrchestra (orchestration backbone with smart routing, failover, and reconciliation) or directly through M-Pesa, Airtel Money, KCB, Equity, Co-op Bank, Stanbic, NCBA, IntaSend, Paystack, Flutterwave, or Pesapal — all through one package.
+Define plans, gate features, track usage, accept payments via PayOrchestra (orchestration backbone with smart routing, failover, and reconciliation) or directly through M-Pesa, Airtel Money, T-Kash, KCB, Equity, Co-op Bank, Stanbic, NCBA, IntaSend, Paystack, Flutterwave, or Pesapal — all through one package.
 
 ---
 
@@ -14,7 +14,9 @@ This package gives you:
 
 - **Feature gating** — gate routes by feature slug, not plan name. Plans are just bundles of features.
 - **Usage metering** — track and enforce limits on metered features (API calls, OCR scans, entries/month)
-- **Provider-agnostic payments** — PayOrchestra orchestration backbone, plus 12 standalone drivers: M-Pesa, Airtel Money, KCB BUNI, Equity Jenga, Co-op Bank, Stanbic, NCBA, IntaSend, Paystack, Flutterwave, Pesapal, or manual/cash — 13 providers behind one interface
+- **Provider-agnostic payments** — PayOrchestra orchestration backbone, plus 13 standalone drivers: M-Pesa, Airtel Money, T-Kash, KCB BUNI, Equity Jenga, Co-op Bank, Stanbic, NCBA, IntaSend, Paystack, Flutterwave, Pesapal, or manual/cash — 14 providers behind one interface
+- **Multi-channel checkout** — offer a curated set of providers (`BILLING_ENABLED_PROVIDERS`) and let customers pick at checkout via `GET /payments/options`
+- **Automatic payment splitting** — amounts above a provider's per-transaction limit (e.g. M-Pesa 250k) are split into linked tranche payments that settle one invoice, respecting per-day caps
 - **Subscription lifecycle** — trials, renewals, cancellation, pause/resume, plan upgrades with proration
 - **Invoicing** — auto-generated invoices with line items, tax calculation, sequential numbering
 - **Full REST API** — 32 endpoints for managing plans, subscriptions, usage, payments, and invoices
@@ -259,7 +261,7 @@ The package ships with a full REST API. All endpoints are documented in [docs/AP
 | Usage | 3 | Summary, detail, record |
 | Payments | 4 | List, initiate, show, refund |
 | Invoices | 6 | List, create, show, send, void, mark-paid |
-| Webhooks | 12 | M-Pesa, Paystack, Flutterwave, Pesapal, Airtel, KCB, Jenga, Co-op, Stanbic, NCBA, IntaSend, PayOrchestra callbacks |
+| Webhooks | 13 | M-Pesa, Paystack, Flutterwave, Pesapal, Airtel, T-Kash, KCB, Jenga, Co-op, Stanbic, NCBA, IntaSend, PayOrchestra callbacks |
 
 Routes are configurable:
 
@@ -282,6 +284,7 @@ Routes are configurable:
 | **PayOrchestra** ⭐ | `payorchestra` | Multi-channel via backbone — routes to M-Pesa, cards, bank transfers, etc. with smart routing, failover, reconciliation, hosted checkout |
 | **M-Pesa** | `mpesa` | STK Push, C2B, B2C |
 | **Airtel Money** | `airtel` | C2B collections, B2C disbursements |
+| **T-Kash** | `tkash` | Telkom Kenya mobile money — collections, B2C disbursements |
 | **KCB BUNI** | `kcb` | M-Pesa, Airtel, T-Kash, VOOMA, bank (multi-channel) |
 | **Equity Jenga** | `jenga` | Cards, mobile money, bank transfers |
 | **Co-op Bank** | `coopbank` | PesaLink (any bank), internal transfers, balance queries |

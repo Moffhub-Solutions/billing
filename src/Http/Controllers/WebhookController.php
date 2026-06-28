@@ -4,17 +4,20 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Http\Controllers;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Moffhub\Billing\Contracts\BillableInterface;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Events\PaymentFailed;
 use Moffhub\Billing\Events\PaymentReceived;
 use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\PaymentManager;
+use Moffhub\Billing\Services\SplitPaymentService;
 
 class WebhookController extends Controller
 {
@@ -60,6 +63,14 @@ class WebhookController extends Controller
     public function airtel(Request $request): JsonResponse
     {
         return $this->handleWebhook($request, 'airtel');
+    }
+
+    /**
+     * Handle T-Kash callback.
+     */
+    public function tkash(Request $request): JsonResponse
+    {
+        return $this->handleWebhook($request, 'tkash');
     }
 
     /**
@@ -198,7 +209,9 @@ class WebhookController extends Controller
             return;
         }
 
-        DB::transaction(function () use ($providerName, $providerPaymentId, $newStatus, $event): void {
+        $completedPaymentId = null;
+
+        DB::transaction(function () use ($providerName, $providerPaymentId, $newStatus, $event, &$completedPaymentId): void {
             $payment = Payment::query()
                 ->where('provider_payment_id', $providerPaymentId)
                 ->lockForUpdate()
@@ -247,6 +260,8 @@ class WebhookController extends Controller
             }
 
             if ($newStatus === PaymentStatus::COMPLETED) {
+                $completedPaymentId = $payment->id;
+
                 PaymentReceived::dispatch(
                     $payment,
                     $billable,
@@ -268,6 +283,42 @@ class WebhookController extends Controller
                 );
             }
         });
+
+        // After the locked update commits: keep the invoice status in sync and,
+        // for split payments, initiate the next tranche (an HTTP call that must
+        // not run inside the row-locked transaction above).
+        if ($completedPaymentId !== null) {
+            $this->onPaymentCompleted($completedPaymentId);
+        }
+    }
+
+    /**
+     * Post-commit settlement for a completed payment: recalculate the linked
+     * invoice's status and advance the next tranche of a split payment.
+     */
+    protected function onPaymentCompleted(int $paymentId): void
+    {
+        $payment = Payment::query()->find($paymentId);
+
+        if ($payment === null) {
+            return;
+        }
+
+        if ($payment->invoice_id !== null) {
+            $payment->loadMissing('invoice');
+            $payment->invoice?->recalculateStatus();
+        }
+
+        if (! $payment->isSplit()) {
+            return;
+        }
+
+        $payment->loadMissing('billable');
+        $billable = $payment->billable;
+
+        if ($billable instanceof Model && $billable instanceof BillableInterface) {
+            app(SplitPaymentService::class)->advance($payment, $billable);
+        }
     }
 
     /**

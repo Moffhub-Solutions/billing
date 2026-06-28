@@ -8,6 +8,7 @@ use Illuminate\Config\Repository;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Manager;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
+use Moffhub\Billing\Enums\PaymentMethod;
 use Moffhub\Billing\Providers\AirtelMoneyProvider;
 use Moffhub\Billing\Providers\CoopBankProvider;
 use Moffhub\Billing\Providers\FlutterwaveProvider;
@@ -21,6 +22,7 @@ use Moffhub\Billing\Providers\PayOrchestraProvider;
 use Moffhub\Billing\Providers\PaystackProvider;
 use Moffhub\Billing\Providers\PesapalProvider;
 use Moffhub\Billing\Providers\StanbicProvider;
+use Moffhub\Billing\Providers\TkashProvider;
 
 class PaymentManager extends Manager
 {
@@ -116,6 +118,29 @@ class PaymentManager extends Manager
             callbackUrl: $this->configString($prefix.'callback_url'),
             baseUrl: $this->configNullableString($prefix.'base_url'),
             country: $this->configString($prefix.'country', 'KE'),
+            currency: $this->configString($prefix.'currency', 'KES'),
+        );
+    }
+
+    /**
+     * Create the T-Kash payment driver (Telkom Kenya mobile money).
+     */
+    public function createTkashDriver(): PaymentProviderInterface
+    {
+        $prefix = 'billing.providers.tkash.';
+
+        return new TkashProvider(
+            consumerKey: $this->configString($prefix.'consumer_key'),
+            consumerSecret: $this->configString($prefix.'consumer_secret'),
+            consumerId: $this->configString($prefix.'consumer_id'),
+            grantUsername: $this->configString($prefix.'grant_username'),
+            grantPassword: $this->configString($prefix.'grant_password'),
+            b2cUsername: $this->configString($prefix.'b2c_username'),
+            b2cPassword: $this->configString($prefix.'b2c_password'),
+            environment: $this->configString($prefix.'environment', 'sandbox'),
+            callbackUrl: $this->configString($prefix.'callback_url'),
+            validationUrl: $this->configString($prefix.'validation_url'),
+            baseUrl: $this->configNullableString($prefix.'base_url'),
             currency: $this->configString($prefix.'currency', 'KES'),
         );
     }
@@ -257,7 +282,115 @@ class PaymentManager extends Manager
      */
     public function getAvailableProviders(): array
     {
-        return ['payorchestra', 'mpesa', 'paystack', 'flutterwave', 'pesapal', 'airtel', 'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba', 'intasend', 'manual'];
+        return ['payorchestra', 'mpesa', 'paystack', 'flutterwave', 'pesapal', 'airtel', 'tkash', 'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba', 'intasend', 'manual'];
+    }
+
+    /**
+     * Get the providers offered to customers at checkout.
+     *
+     * Resolves `billing.enabled_providers` (a curated, ordered subset) down to
+     * those that are actually configured. When the config list is empty, every
+     * configured provider is offered.
+     *
+     * @return array<int, string>
+     */
+    public function getEnabledProviders(): array
+    {
+        $configured = array_values(array_filter(
+            $this->getAvailableProviders(),
+            fn (string $provider): bool => $this->isProviderConfigured($provider),
+        ));
+
+        $enabledRaw = $this->config()->get('billing.enabled_providers', []);
+        $enabled = is_array($enabledRaw)
+            ? array_values(array_filter($enabledRaw, fn ($v): bool => is_string($v) && $v !== ''))
+            : [];
+
+        if ($enabled === []) {
+            return $configured;
+        }
+
+        // Preserve the configured order of the curated list.
+        return array_values(array_filter($enabled, fn (string $provider): bool => in_array($provider, $configured, true)));
+    }
+
+    /**
+     * Build the selectable payment options for the checkout UI.
+     *
+     * Each option carries the provider key (passed back as `provider` when
+     * initiating a payment), a display label, and the canonical payment method.
+     *
+     * @return array<int, array{provider: string, label: string, method: string}>
+     */
+    public function getPaymentOptions(): array
+    {
+        return array_map(fn (string $provider): array => [
+            'provider' => $provider,
+            'label' => $this->providerLabel($provider),
+            'method' => $this->providerMethod($provider)->value,
+        ], $this->getEnabledProviders());
+    }
+
+    /**
+     * Human-readable label for a provider key.
+     */
+    public function providerLabel(string $provider): string
+    {
+        return match ($provider) {
+            'mpesa' => 'M-Pesa',
+            'airtel' => 'Airtel Money',
+            'tkash' => 'T-Kash',
+            'kcb' => 'KCB',
+            'jenga' => 'Equity (Jenga)',
+            'coopbank' => 'Co-operative Bank',
+            'stanbic' => 'Stanbic Bank',
+            'ncba' => 'NCBA',
+            'intasend' => 'IntaSend',
+            'paystack' => 'Paystack',
+            'flutterwave' => 'Flutterwave',
+            'pesapal' => 'Pesapal',
+            'payorchestra' => 'PayOrchestra',
+            'manual' => 'Manual/Cash',
+            default => ucfirst($provider),
+        };
+    }
+
+    /**
+     * Map a provider key to its canonical payment method.
+     */
+    public function providerMethod(string $provider): PaymentMethod
+    {
+        return match ($provider) {
+            'mpesa' => PaymentMethod::MPESA,
+            'airtel' => PaymentMethod::AIRTEL_MONEY,
+            'tkash' => PaymentMethod::TKASH,
+            'kcb', 'jenga', 'coopbank', 'stanbic', 'ncba' => PaymentMethod::BANK,
+            'paystack', 'flutterwave', 'pesapal' => PaymentMethod::CARD,
+            'intasend', 'payorchestra' => PaymentMethod::MOBILE_MONEY,
+            default => PaymentMethod::MANUAL,
+        };
+    }
+
+    /**
+     * Get a provider's per-transaction limits.
+     *
+     * Amounts are in cents. A null value means "no cap". Reads
+     * `billing.providers.<provider>.limits`, falling back to no limits.
+     *
+     * @return array{max_amount: int|null, max_per_day: int|null}
+     */
+    public function getProviderLimits(string $provider): array
+    {
+        $raw = $this->config()->get("billing.providers.{$provider}.limits", []);
+        $limits = is_array($raw) ? $raw : [];
+
+        $maxAmount = $limits['max_amount'] ?? null;
+        $maxPerDay = $limits['max_per_day'] ?? null;
+
+        return [
+            'max_amount' => is_numeric($maxAmount) && (int) $maxAmount > 0 ? (int) $maxAmount : null,
+            'max_per_day' => is_numeric($maxPerDay) && (int) $maxPerDay > 0 ? (int) $maxPerDay : null,
+        ];
     }
 
     /**
@@ -274,6 +407,7 @@ class PaymentManager extends Manager
             'flutterwave' => $this->configString($prefix.'secret_key') !== '',
             'pesapal' => $this->configString($prefix.'consumer_key') !== '' && $this->configString($prefix.'consumer_secret') !== '',
             'airtel' => $this->configString($prefix.'client_id') !== '' && $this->configString($prefix.'client_secret') !== '',
+            'tkash' => $this->configString($prefix.'consumer_key') !== '' && $this->configString($prefix.'consumer_secret') !== '' && $this->configString($prefix.'consumer_id') !== '',
             'kcb' => $this->configString($prefix.'api_key') !== '' && $this->configString($prefix.'api_secret') !== '',
             'jenga' => $this->configString($prefix.'api_key') !== '' && $this->configString($prefix.'consumer_secret') !== '',
             'coopbank' => $this->configString($prefix.'consumer_key') !== '' && $this->configString($prefix.'consumer_secret') !== '',

@@ -138,6 +138,59 @@ class PaymentApiTest extends BaseTestCase
 
     // ─── Initiate Payment ───────────────────────────────────────────────
 
+    // ─── Payment Options (multi-channel selector) ──────────────────────
+
+    public function test_list_payment_options_defaults_to_configured(): void
+    {
+        $this->setConfig('billing.providers.mpesa', ['consumer_key' => 'k', 'consumer_secret' => 's']);
+        $this->setConfig('billing.providers.airtel', ['client_id' => 'i', 'client_secret' => 's']);
+        $this->setConfig('billing.enabled_providers', []);
+
+        $response = $this->actingAs($this->user)
+            ->getJson('/api/billing/payments/options');
+
+        $response->assertOk();
+        $providers = array_column($response->json('data'), 'provider');
+        $this->assertContains('mpesa', $providers);
+        $this->assertContains('airtel', $providers);
+        $this->assertContains('manual', $providers);
+    }
+
+    public function test_list_payment_options_respects_curated_order(): void
+    {
+        $this->setConfig('billing.providers.mpesa', ['consumer_key' => 'k', 'consumer_secret' => 's']);
+        $this->setConfig('billing.providers.airtel', ['client_id' => 'i', 'client_secret' => 's']);
+        $this->setConfig('billing.providers.tkash', ['consumer_key' => 'k', 'consumer_secret' => 's', 'consumer_id' => '600100']);
+        $this->setConfig('billing.enabled_providers', ['airtel', 'tkash', 'mpesa']);
+
+        $response = $this->actingAs($this->user)
+            ->getJson('/api/billing/payments/options');
+
+        $response->assertOk()
+            ->assertJsonCount(3, 'data')
+            ->assertJsonPath('data.0.provider', 'airtel')
+            ->assertJsonPath('data.0.label', 'Airtel Money')
+            ->assertJsonPath('data.0.method', 'airtel_money')
+            ->assertJsonPath('data.1.provider', 'tkash')
+            ->assertJsonPath('data.1.label', 'T-Kash')
+            ->assertJsonPath('data.1.method', 'tkash')
+            ->assertJsonPath('data.2.provider', 'mpesa');
+    }
+
+    public function test_initiate_payment_rejects_disabled_provider(): void
+    {
+        $this->setConfig('billing.providers.mpesa', ['consumer_key' => 'k', 'consumer_secret' => 's']);
+        $this->setConfig('billing.enabled_providers', ['manual']);
+
+        $response = $this->actingAs($this->user)
+            ->postJson('/api/billing/payments', [
+                'amount' => 250000,
+                'provider' => 'mpesa',
+            ]);
+
+        $response->assertStatus(422);
+    }
+
     public function test_initiate_payment_manual_provider(): void
     {
         $response = $this->actingAs($this->user)

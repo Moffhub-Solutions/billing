@@ -16,6 +16,7 @@ use Moffhub\Billing\Providers\MpesaProvider;
 use Moffhub\Billing\Providers\NcbaProvider;
 use Moffhub\Billing\Providers\PaystackProvider;
 use Moffhub\Billing\Providers\StanbicProvider;
+use Moffhub\Billing\Providers\TkashProvider;
 use Moffhub\Billing\Tests\BaseTestCase;
 
 class PaymentManagerTest extends BaseTestCase
@@ -78,6 +79,7 @@ class PaymentManagerTest extends BaseTestCase
         $this->assertContains('flutterwave', $providers);
         $this->assertContains('pesapal', $providers);
         $this->assertContains('airtel', $providers);
+        $this->assertContains('tkash', $providers);
         $this->assertContains('kcb', $providers);
         $this->assertContains('jenga', $providers);
         $this->assertContains('coopbank', $providers);
@@ -86,12 +88,57 @@ class PaymentManagerTest extends BaseTestCase
         $this->assertContains('intasend', $providers);
         $this->assertContains('payorchestra', $providers);
         $this->assertContains('manual', $providers);
-        $this->assertCount(13, $providers);
+        $this->assertCount(14, $providers);
     }
 
     public function test_is_provider_configured_manual(): void
     {
         $this->assertTrue($this->manager->isProviderConfigured('manual'));
+    }
+
+    // ─── Enabled Providers / Payment Options ───────────────────────────
+
+    public function test_get_enabled_providers_defaults_to_configured(): void
+    {
+        $this->setConfig('billing.enabled_providers', []);
+        $this->setConfig('billing.providers.mpesa', ['consumer_key' => 'k', 'consumer_secret' => 's']);
+
+        $enabled = $this->manager->getEnabledProviders();
+
+        $this->assertContains('mpesa', $enabled);
+        $this->assertContains('manual', $enabled);
+        // Unconfigured providers are excluded.
+        $this->assertNotContains('airtel', $enabled);
+    }
+
+    public function test_get_enabled_providers_respects_curated_list_and_order(): void
+    {
+        $this->setConfig('billing.providers.mpesa', ['consumer_key' => 'k', 'consumer_secret' => 's']);
+        $this->setConfig('billing.providers.airtel', ['client_id' => 'i', 'client_secret' => 's']);
+        $this->setConfig('billing.enabled_providers', ['airtel', 'mpesa']);
+
+        $this->assertSame(['airtel', 'mpesa'], $this->manager->getEnabledProviders());
+    }
+
+    public function test_get_enabled_providers_drops_unconfigured_from_curated_list(): void
+    {
+        $this->setConfig('billing.providers.mpesa', ['consumer_key' => 'k', 'consumer_secret' => 's']);
+        // airtel listed but NOT configured
+        $this->setConfig('billing.enabled_providers', ['mpesa', 'airtel']);
+
+        $this->assertSame(['mpesa'], $this->manager->getEnabledProviders());
+    }
+
+    public function test_get_payment_options_shape(): void
+    {
+        $this->setConfig('billing.providers.tkash', ['consumer_key' => 'k', 'consumer_secret' => 's', 'consumer_id' => '600100']);
+        $this->setConfig('billing.enabled_providers', ['tkash']);
+
+        $options = $this->manager->getPaymentOptions();
+
+        $this->assertSame([
+            ['provider' => 'tkash', 'label' => 'T-Kash', 'method' => 'tkash'],
+        ], $options);
     }
 
     public function test_is_provider_configured_mpesa_missing(): void
@@ -123,6 +170,20 @@ class PaymentManagerTest extends BaseTestCase
 
         $this->assertInstanceOf(AirtelMoneyProvider::class, $driver);
         $this->assertEquals('airtel', $driver->getName());
+    }
+
+    public function test_tkash_driver_creates_provider(): void
+    {
+        $this->setConfig('billing.providers.tkash', [
+            'consumer_key' => 'test_key',
+            'consumer_secret' => 'test_secret',
+            'consumer_id' => '600100',
+        ]);
+
+        $driver = $this->manager->driver('tkash');
+
+        $this->assertInstanceOf(TkashProvider::class, $driver);
+        $this->assertEquals('tkash', $driver->getName());
     }
 
     public function test_kcb_driver_creates_provider(): void
