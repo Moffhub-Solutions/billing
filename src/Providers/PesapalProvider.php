@@ -164,7 +164,9 @@ class PesapalProvider extends BasePaymentProvider
     {
         $cacheKey = 'billing:pesapal:access_token:'.$this->consumerKey;
 
+        /** @var string $token */
         $token = Cache::remember($cacheKey, 240, function (): string {
+            /** @var \Illuminate\Http\Client\Response $response */
             $response = Http::post($this->baseUrl.'/api/Auth/RequestToken', [
                 'consumer_key' => $this->consumerKey,
                 'consumer_secret' => $this->consumerSecret,

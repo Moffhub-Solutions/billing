@@ -391,6 +391,7 @@ class MpesaProvider extends BasePaymentProvider
     {
         $cacheKey = 'billing:mpesa:access_token:'.$this->shortcode;
 
+        /** @var string $token */
         $token = Cache::remember($cacheKey, 3300, function (): string {
             $credentials = base64_encode($this->consumerKey.':'.$this->consumerSecret);
 

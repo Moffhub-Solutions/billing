@@ -213,6 +213,7 @@ class CoopBankProvider extends BasePaymentProvider
     {
         $cacheKey = 'billing:coopbank:access_token:'.$this->consumerKey;
 
+        /** @var string $token */
         $token = Cache::remember($cacheKey, 3300, function (): string {
             $credentials = base64_encode($this->consumerKey.':'.$this->consumerSecret);
 

@@ -225,7 +225,9 @@ class AirtelMoneyProvider extends BasePaymentProvider
     {
         $cacheKey = 'billing:airtel:access_token:'.$this->clientId;
 
+        /** @var string $token */
         $token = Cache::remember($cacheKey, 3300, function (): string {
+            /** @var \Illuminate\Http\Client\Response $response */
             $response = Http::post($this->baseUrl.'/auth/oauth2/token', [
                 'client_id' => $this->clientId,
                 'client_secret' => $this->clientSecret,

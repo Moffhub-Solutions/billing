@@ -257,6 +257,7 @@ class JengaProvider extends BasePaymentProvider
     {
         $cacheKey = 'billing:jenga:access_token:'.$this->merchantCode;
 
+        /** @var string $token */
         $token = Cache::remember($cacheKey, 3300, function (): string {
             $credentials = base64_encode($this->apiKey.':'.$this->consumerSecret);
 

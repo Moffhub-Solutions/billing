@@ -24,7 +24,10 @@ class FeatureResolver implements FeatureResolverInterface
         $cacheKey = "{$prefix}:{$billable->getMorphClass()}:{$key}:{$featureSlug}";
 
         if ($ttl > 0) {
-            return Cache::remember($cacheKey, $ttl, fn (): bool => $this->resolveFeature($billable, $featureSlug));
+            /** @var bool $cached */
+            $cached = Cache::remember($cacheKey, $ttl, fn (): bool => $this->resolveFeature($billable, $featureSlug));
+
+            return $cached;
         }
 
         return $this->resolveFeature($billable, $featureSlug);
