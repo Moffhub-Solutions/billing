@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Providers;
 
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -166,7 +167,7 @@ class PesapalProvider extends BasePaymentProvider
 
         /** @var string $token */
         $token = Cache::remember($cacheKey, 240, function (): string {
-            /** @var \Illuminate\Http\Client\Response $response */
+            /** @var Response $response */
             $response = Http::post($this->baseUrl.'/api/Auth/RequestToken', [
                 'consumer_key' => $this->consumerKey,
                 'consumer_secret' => $this->consumerSecret,
