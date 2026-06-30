@@ -44,7 +44,7 @@ class BillingHealthCommand extends Command
 
         foreach ($paymentManager->getAvailableProviders() as $provider) {
             $configured = $paymentManager->isProviderConfigured($provider);
-            $isDefault = $provider === config('billing.default_provider');
+            $isDefault = $provider === billing_setting('default_provider');
             $status = $configured ? '<fg=green>configured</>' : '<fg=red>not configured</>';
             $default = $isDefault ? ' <fg=yellow>(default)</>' : '';
             $this->line("  {$provider}: {$status}{$default}");
@@ -52,9 +52,9 @@ class BillingHealthCommand extends Command
 
         $this->newLine();
         $this->info('Configuration:');
-        $currencyRaw = config('billing.currency', 'KES');
-        $cacheTtlRaw = config('billing.features.cache_ttl', 300);
-        $graceRaw = config('billing.subscriptions.grace_period_days', 7);
+        $currencyRaw = billing_setting('currency', 'KES');
+        $cacheTtlRaw = billing_setting('features.cache_ttl', 300);
+        $graceRaw = billing_setting('subscriptions.grace_period_days', 7);
 
         $this->line('  Currency: '.(is_string($currencyRaw) ? $currencyRaw : 'KES'));
         $this->line('  Feature cache TTL: '.(is_numeric($cacheTtlRaw) ? (int) $cacheTtlRaw : 300).'s');

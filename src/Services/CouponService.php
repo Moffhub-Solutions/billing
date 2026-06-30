@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Services;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Moffhub\Billing\Exceptions\CouponException;
 use Moffhub\Billing\Models\Coupon;
 use Moffhub\Billing\Models\CouponRedemption;
@@ -56,30 +57,41 @@ class CouponService
         $discountAmount = $coupon->calculateDiscount($amount);
         $finalAmount = max(0, $amount - $discountAmount);
 
-        // Record the redemption
-        CouponRedemption::create([
-            'billable_type' => $billable->getMorphClass(),
-            'billable_id' => $billable->getKey(),
-            'coupon_id' => $coupon->id,
-            'promotion_code_id' => $promoCode->id,
-            'subscription_id' => $subscriptionId,
-            'invoice_id' => $invoiceId,
-            'original_amount' => $amount,
-            'discount_amount' => $discountAmount,
-            'final_amount' => $finalAmount,
-            'redeemed_at' => now(),
-        ]);
+        // Record + count under row locks, re-checking redeemability inside the
+        // transaction so two concurrent redemptions can't both pass an exhausted
+        // max_redemptions cap (check-then-act race on a single-use code).
+        return DB::transaction(function () use ($coupon, $promoCode, $billable, $amount, $subscriptionId, $invoiceId, $discountAmount, $finalAmount, $code): array {
+            $lockedCoupon = Coupon::query()->lockForUpdate()->find($coupon->id);
+            $lockedPromo = PromotionCode::query()->lockForUpdate()->find($promoCode->id);
 
-        // Increment redemption counters
-        $coupon->increment('times_redeemed');
-        $promoCode->increment('times_redeemed');
+            if (! $lockedCoupon instanceof Coupon || ! $lockedCoupon->isRedeemable()
+                || ! $lockedPromo instanceof PromotionCode || ! $lockedPromo->isRedeemable()) {
+                throw CouponException::expired($code);
+            }
 
-        return [
-            'discount_amount' => $discountAmount,
-            'final_amount' => $finalAmount,
-            'coupon' => $coupon,
-            'promotion_code' => $promoCode,
-        ];
+            CouponRedemption::create([
+                'billable_type' => $billable->getMorphClass(),
+                'billable_id' => $billable->getKey(),
+                'coupon_id' => $lockedCoupon->id,
+                'promotion_code_id' => $lockedPromo->id,
+                'subscription_id' => $subscriptionId,
+                'invoice_id' => $invoiceId,
+                'original_amount' => $amount,
+                'discount_amount' => $discountAmount,
+                'final_amount' => $finalAmount,
+                'redeemed_at' => now(),
+            ]);
+
+            $lockedCoupon->increment('times_redeemed');
+            $lockedPromo->increment('times_redeemed');
+
+            return [
+                'discount_amount' => $discountAmount,
+                'final_amount' => $finalAmount,
+                'coupon' => $lockedCoupon,
+                'promotion_code' => $lockedPromo,
+            ];
+        });
     }
 
     /**
@@ -101,26 +113,34 @@ class CouponService
         $discountAmount = $coupon->calculateDiscount($amount);
         $finalAmount = max(0, $amount - $discountAmount);
 
-        CouponRedemption::create([
-            'billable_type' => $billable->getMorphClass(),
-            'billable_id' => $billable->getKey(),
-            'coupon_id' => $coupon->id,
-            'subscription_id' => $subscriptionId,
-            'invoice_id' => $invoiceId,
-            'original_amount' => $amount,
-            'discount_amount' => $discountAmount,
-            'final_amount' => $finalAmount,
-            'redeemed_at' => now(),
-        ]);
+        return DB::transaction(function () use ($coupon, $billable, $amount, $subscriptionId, $invoiceId, $discountAmount, $finalAmount): array {
+            $lockedCoupon = Coupon::query()->lockForUpdate()->find($coupon->id);
 
-        $coupon->increment('times_redeemed');
+            if (! $lockedCoupon instanceof Coupon || ! $lockedCoupon->isRedeemable()) {
+                throw CouponException::expired($coupon->name);
+            }
 
-        return [
-            'discount_amount' => $discountAmount,
-            'final_amount' => $finalAmount,
-            'coupon' => $coupon,
-            'promotion_code' => null,
-        ];
+            CouponRedemption::create([
+                'billable_type' => $billable->getMorphClass(),
+                'billable_id' => $billable->getKey(),
+                'coupon_id' => $lockedCoupon->id,
+                'subscription_id' => $subscriptionId,
+                'invoice_id' => $invoiceId,
+                'original_amount' => $amount,
+                'discount_amount' => $discountAmount,
+                'final_amount' => $finalAmount,
+                'redeemed_at' => now(),
+            ]);
+
+            $lockedCoupon->increment('times_redeemed');
+
+            return [
+                'discount_amount' => $discountAmount,
+                'final_amount' => $finalAmount,
+                'coupon' => $lockedCoupon,
+                'promotion_code' => null,
+            ];
+        });
     }
 
     /**

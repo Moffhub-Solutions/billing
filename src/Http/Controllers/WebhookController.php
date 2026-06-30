@@ -4,26 +4,21 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Http\Controllers;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Moffhub\Billing\Contracts\BillableInterface;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
-use Moffhub\Billing\Enums\PaymentStatus;
-use Moffhub\Billing\Events\PaymentFailed;
-use Moffhub\Billing\Events\PaymentReceived;
-use Moffhub\Billing\Models\Invoice;
-use Moffhub\Billing\Models\Payment;
+use Moffhub\Billing\Jobs\ConfirmWebhookPayment;
 use Moffhub\Billing\PaymentManager;
-use Moffhub\Billing\Services\SplitPaymentService;
+use Moffhub\Billing\Services\WebhookSettlement;
+use Symfony\Component\HttpFoundation\IpUtils;
 
 class WebhookController extends Controller
 {
     public function __construct(
         protected PaymentManager $paymentManager,
+        protected WebhookSettlement $settlement,
     ) {}
 
     /**
@@ -132,6 +127,12 @@ class WebhookController extends Controller
 
     /**
      * Process a webhook from any provider.
+     *
+     * A verified callback (valid provider signature, or a matching configured
+     * secret) settles inline. An unverified callback is never trusted to move
+     * money: if it names a pending payment, an async job re-queries the
+     * provider's own status API and settles only on a confirmed result, so a
+     * forged or replayed callback settles nothing.
      */
     protected function handleWebhook(Request $request, string $providerName): JsonResponse
     {
@@ -144,16 +145,13 @@ class WebhookController extends Controller
                 return response()->json(['error' => 'Invalid driver'], 500);
             }
 
-            // Verify signature
-            if (! $driver->verifyWebhook($request)) {
-                Log::warning("Billing webhook: Invalid signature from {$providerName}", [
-                    'ip' => $request->ip(),
-                ]);
+            // Edge gate: reject anything outside a configured provider IP allowlist.
+            if (! $this->ipAllowed($request, $providerName)) {
+                Log::warning("Billing webhook: rejected IP for {$providerName}", ['ip' => $request->ip()]);
 
-                return response()->json(['error' => 'Invalid signature'], 403);
+                return response()->json(['error' => 'Forbidden'], 403);
             }
 
-            // Parse the webhook payload
             $event = $driver->parseWebhook($request);
 
             Log::info("Billing webhook received: {$providerName}/{$event['event']}", [
@@ -162,13 +160,36 @@ class WebhookController extends Controller
                 'provider_payment_id' => $event['provider_payment_id'],
             ]);
 
-            $this->processEvent($providerName, $event);
+            $verified = $driver->verifyWebhook($request) || $this->secretMatches($request, $providerName);
 
-            return response()->json(['status' => 'received']);
+            if ($verified) {
+                $this->settlement->settle($providerName, $event['provider_payment_id'], $event['status'], $event['metadata']);
+
+                return response()->json(['status' => 'received']);
+            }
+
+            // Unverified: do not trust the payload to settle.
+            if (! $this->confirmUnverified()) {
+                Log::warning("Billing webhook: unverified {$providerName} callback rejected (confirm_unverified off, no signature/secret)", [
+                    'ip' => $request->ip(),
+                ]);
+
+                return response()->json(['error' => 'Unverified'], 403);
+            }
+
+            $providerPaymentId = $event['provider_payment_id'];
+
+            // Only enqueue a re-query for a known pending payment, so a flood of
+            // forged callbacks for unknown ids can't spawn jobs (ShouldBeUnique
+            // dedupes repeats for the same id).
+            if (is_string($providerPaymentId) && $providerPaymentId !== '' && $this->settlement->hasPendingPayment($providerPaymentId)) {
+                ConfirmWebhookPayment::dispatch($providerName, $providerPaymentId);
+            }
+
+            return response()->json(['status' => 'accepted'], 202);
         } catch (\Throwable $e) {
             Log::error("Billing webhook error: {$providerName}", [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json(['error' => 'Processing failed'], 500);
@@ -176,169 +197,47 @@ class WebhookController extends Controller
     }
 
     /**
-     * Apply a parsed webhook event to the matching `Payment` row and fire the
-     * corresponding domain event.
-     *
-     * Webhooks can be retried by the provider (M-Pesa, Pesapal, KCB all do
-     * this), so the update has to be idempotent: a row already in a terminal
-     * state matching the inbound status is left untouched and no event is
-     * dispatched. The lookup + update is wrapped in a transaction with a row
-     * lock to prevent two simultaneous deliveries from racing.
-     *
-     * @param  array{event: string, provider_payment_id: string|null, status: string, amount: int|null, currency: string|null, metadata: array<string, mixed>}  $event
+     * Whether the request IP is allowed for this provider. An empty/unset
+     * allowlist means "no IP restriction"; when set, only listed IPs/CIDRs pass.
      */
-    protected function processEvent(string $providerName, array $event): void
+    protected function ipAllowed(Request $request, string $providerName): bool
     {
-        $providerPaymentId = $event['provider_payment_id'];
+        $configured = config("billing.webhooks.providers.{$providerName}.ip_allowlist", []);
+        $allowlist = is_array($configured)
+            ? array_values(array_filter($configured, fn ($v): bool => is_string($v) && $v !== ''))
+            : [];
 
-        if ($providerPaymentId === null || $providerPaymentId === '') {
-            Log::warning("Billing webhook: Missing provider_payment_id from {$providerName}", [
-                'event' => $event['event'],
-            ]);
-
-            return;
+        if ($allowlist === []) {
+            return true;
         }
 
-        $newStatus = $this->mapStatus($event['status']);
+        $ip = $request->ip();
 
-        if ($newStatus === null) {
-            Log::info("Billing webhook: Ignoring non-terminal status from {$providerName}", [
-                'provider_payment_id' => $providerPaymentId,
-                'status' => $event['status'],
-            ]);
-
-            return;
-        }
-
-        $completedPaymentId = null;
-
-        DB::transaction(function () use ($providerName, $providerPaymentId, $newStatus, $event, &$completedPaymentId): void {
-            $payment = Payment::query()
-                ->where('provider_payment_id', $providerPaymentId)
-                ->lockForUpdate()
-                ->first();
-
-            if ($payment === null) {
-                Log::warning("Billing webhook: No payment found for provider_payment_id from {$providerName}", [
-                    'provider_payment_id' => $providerPaymentId,
-                ]);
-
-                return;
-            }
-
-            // Idempotency: terminal-state payments aren't reprocessed.
-            if ($payment->status === $newStatus && $payment->status !== PaymentStatus::PENDING) {
-                return;
-            }
-
-            $payment->status = $newStatus;
-            $payment->payment_provider = $payment->payment_provider ?? $providerName;
-            $providerRef = $event['metadata']['provider_reference'] ?? $payment->provider_reference;
-            $payment->provider_reference = is_string($providerRef) ? $providerRef : $payment->provider_reference;
-
-            $merged = array_merge((array) ($payment->metadata ?? []), $event['metadata']);
-            $payment->metadata = $merged;
-
-            if ($newStatus === PaymentStatus::COMPLETED) {
-                $payment->paid_at = now();
-            } elseif ($newStatus === PaymentStatus::FAILED) {
-                $payment->failed_at = now();
-            } elseif ($newStatus === PaymentStatus::REFUNDED) {
-                $payment->refunded_at = now();
-            }
-
-            $payment->save();
-
-            $payment->loadMissing('billable');
-            $billable = $payment->billable;
-
-            if ($billable === null) {
-                Log::warning("Billing webhook: Payment {$payment->id} has no billable; skipping event dispatch", [
-                    'provider' => $providerName,
-                ]);
-
-                return;
-            }
-
-            if ($newStatus === PaymentStatus::COMPLETED) {
-                $completedPaymentId = $payment->id;
-
-                PaymentReceived::dispatch(
-                    $payment,
-                    $billable,
-                    (int) $payment->amount,
-                    (string) $payment->currency,
-                    $payment->payment_method?->value,
-                    $payment->provider_reference,
-                );
-            } elseif ($newStatus === PaymentStatus::FAILED) {
-                $failureReasonRaw = $event['metadata']['failure_reason'] ?? 'Webhook reported failure';
-                $failureReason = is_string($failureReasonRaw) ? $failureReasonRaw : 'Webhook reported failure';
-
-                PaymentFailed::dispatch(
-                    $payment,
-                    $billable,
-                    (int) $payment->amount,
-                    (string) $payment->currency,
-                    $failureReason,
-                );
-            }
-        });
-
-        // After the locked update commits: keep the invoice status in sync and,
-        // for split payments, initiate the next tranche (an HTTP call that must
-        // not run inside the row-locked transaction above).
-        if ($completedPaymentId !== null) {
-            $this->onPaymentCompleted($completedPaymentId);
-        }
+        return $ip !== null && IpUtils::checkIp($ip, $allowlist);
     }
 
     /**
-     * Post-commit settlement for a completed payment: recalculate the linked
-     * invoice's status and advance the next tranche of a split payment.
+     * Whether the request carries the provider's configured shared secret,
+     * supplied as `?secret=` on the registered URL or an `X-Webhook-Secret`
+     * header. Returns false when no secret is configured for the provider.
      */
-    protected function onPaymentCompleted(int $paymentId): void
+    protected function secretMatches(Request $request, string $providerName): bool
     {
-        $payment = Payment::query()->find($paymentId);
+        $secret = config("billing.webhooks.providers.{$providerName}.secret");
 
-        if ($payment === null) {
-            return;
+        if (! is_string($secret) || $secret === '') {
+            return false;
         }
 
-        if ($payment->invoice_id !== null) {
-            // Lock the invoice while recalculating so concurrent tranche webhooks
-            // settling the same invoice can't race on its status.
-            DB::transaction(function () use ($payment): void {
-                $invoice = Invoice::query()->lockForUpdate()->find($payment->invoice_id);
-                $invoice?->recalculateStatus();
-            });
-        }
+        $headerSecret = (string) $request->header('X-Webhook-Secret', '');
+        $queryRaw = $request->query('secret');
+        $provided = $headerSecret !== '' ? $headerSecret : (is_string($queryRaw) ? $queryRaw : '');
 
-        if (! $payment->isSplit()) {
-            return;
-        }
-
-        $payment->loadMissing('billable');
-        $billable = $payment->billable;
-
-        if ($billable instanceof Model && $billable instanceof BillableInterface) {
-            app(SplitPaymentService::class)->advance($payment, $billable);
-        }
+        return $provided !== '' && hash_equals($secret, $provided);
     }
 
-    /**
-     * Normalize a provider's status string to a `PaymentStatus` enum.
-     *
-     * Returns null for non-terminal states (pending, processing) — the
-     * webhook is acknowledged but no event fires until the next callback.
-     */
-    protected function mapStatus(string $status): ?PaymentStatus
+    protected function confirmUnverified(): bool
     {
-        return match (strtolower($status)) {
-            'completed', 'success', 'successful', 'paid', 'confirmed' => PaymentStatus::COMPLETED,
-            'failed', 'failure', 'cancelled', 'canceled', 'declined', 'expired' => PaymentStatus::FAILED,
-            'refunded', 'reversed' => PaymentStatus::REFUNDED,
-            default => null,
-        };
+        return (bool) config('billing.webhooks.confirm_unverified', true);
     }
 }

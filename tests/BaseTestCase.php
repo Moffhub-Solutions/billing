@@ -7,6 +7,7 @@ namespace Moffhub\Billing\Tests;
 use Illuminate\Config\Repository as ConfigRepository;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Testing\PendingCommand;
 use Moffhub\Billing\BillingServiceProvider;
 use Moffhub\Billing\Tests\Fixtures\Models\Company;
@@ -70,6 +71,17 @@ abstract class BaseTestCase extends TestCase
     protected function setConfig(string $key, mixed $value): void
     {
         $this->config()->set($key, $value);
+    }
+
+    /**
+     * Grant the authenticated user billing-admin access for back-office routes
+     * (defines a permissive `billing.admin_gate`). The caller still needs to be
+     * authenticated (actingAs) so the request has a user.
+     */
+    protected function grantBillingAdmin(): void
+    {
+        Gate::define('__billing_admin_test', fn (): bool => true);
+        $this->config()->set('billing.admin_gate', '__billing_admin_test');
     }
 
     /**

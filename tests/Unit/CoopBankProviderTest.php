@@ -215,7 +215,9 @@ class CoopBankProviderTest extends BaseTestCase
             'MessageCode' => '0',
         ]);
 
-        $this->assertTrue($this->provider->verifyWebhook($request));
+        // Co-op callbacks are unsigned; the payload alone is never "verified".
+        // Authenticity comes from the controller's async re-query / IP allowlist.
+        $this->assertFalse($this->provider->verifyWebhook($request));
     }
 
     public function test_verify_webhook_invalid(): void

@@ -26,6 +26,10 @@ class CouponApiTest extends BaseTestCase
             'email' => 'coupon@example.com',
             'company_id' => $this->company->id,
         ]);
+
+        // Admin coupon management routes are gated; authenticate as an admin.
+        $this->actingAs($this->user);
+        $this->grantBillingAdmin();
     }
 
     // ─── List Coupons ───────────────────────────────────────────────────

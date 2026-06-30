@@ -13,6 +13,7 @@ enum PaymentMethod: string
     case BANK = 'bank';
     case MOBILE_MONEY = 'mobile_money';
     case MANUAL = 'manual';
+    case OFFLINE = 'offline';
 
     public function label(): string
     {
@@ -23,7 +24,8 @@ enum PaymentMethod: string
             self::CARD => 'Card',
             self::BANK => 'Bank Transfer',
             self::MOBILE_MONEY => 'Mobile Money',
-            self::MANUAL => 'Manual/Cash',
+            self::MANUAL => 'Cash',
+            self::OFFLINE => 'Offline (proof of payment)',
         };
     }
 }

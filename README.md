@@ -298,6 +298,36 @@ Routes are configurable:
 
 Providers without direct APIs (Telkom T-Kash, Family Bank, DTB) can be accessed through KCB BUNI, Pesapal, or Flutterwave. See [docs/PROVIDERS.md](docs/PROVIDERS.md) for full integration guides.
 
+### Official API docs & webhook authentication
+
+Each integration's official documentation, the webhook/callback authentication it offers, and the status endpoint used to re-query (confirm) a payment. Schemes were verified against the providers' own docs; where a provider does not sign callbacks, this package treats the callback as unverified and confirms the outcome via an asynchronous status re-query before settling (see [Webhook security](#webhook-security)).
+
+| Provider | Official docs | Webhook auth | Status re-query |
+|----------|---------------|--------------|-----------------|
+| PayOrchestra | (backbone) | HMAC-SHA256, `X-PayOrchestra-Signature` | provider status API |
+| M-Pesa (Daraja) | [developer.safaricom.co.ke](https://developer.safaricom.co.ke/) | None (unsigned) — URL secret + [IP allowlist](https://developer.safaricom.co.ke/) | STK Query `POST /mpesa/stkpushquery/v1/query` |
+| Airtel Money | [developers.airtel.africa](https://developers.airtel.africa/documentation/collection-apis/2.0) | Optional body `hash` (HMAC, if enabled) | `GET /standard/v1/payments/{id}` |
+| T-Kash | [telkom.co.ke/t-kash](https://telkom.co.ke/t-kash-getting-started/) (no public API portal) | None (unsigned) | request from Telkom |
+| KCB BUNI | [developer.buni.kcbgroup.com](https://developer.buni.kcbgroup.com/) | `Signature` header (algorithm per IPN onboarding) | per onboarding |
+| Equity Jenga | [developer.jengahq.io](https://developer.jengahq.io/) | SHA-256/RSA `signature` ([guide](https://developer.jengahq.io/guides/account-alerts/generate-signature)) | [STK Push Query](https://developer.jengahq.io/api-explorer/receive-money/mpesa-stk-push/wallet-based-settlement/mpesa-stk-push-query-order-status) |
+| Co-op Bank | [developer.co-opbank.co.ke](https://developer.co-opbank.co.ke/) | None — IP allowlist | Transaction Status Enquiry |
+| Stanbic Bank | [sandbox.stanbicbank.co.ke](https://sandbox.stanbicbank.co.ke/) | Not publicly documented (treat unsigned) | Retrieve Transaction Status API |
+| NCBA | [ke.ncbagroup.com/.../api-solutions](https://ke.ncbagroup.com/payment-solution/api-solutions/) | Not publicly documented (treat unsigned) | per onboarding |
+| IntaSend | [developers.intasend.com](https://developers.intasend.com/docs/setup) | Shared `challenge` value (not HMAC) | `POST /api/v1/payment/status/` |
+| Paystack | [paystack.com/docs](https://paystack.com/docs/payments/webhooks/) | HMAC-SHA512, `x-paystack-signature` | [`GET /transaction/verify/{ref}`](https://paystack.com/docs/api/transaction/#verify) |
+| Flutterwave | [developer.flutterwave.com](https://developer.flutterwave.com/docs/webhooks) | v3: static secret-hash `verif-hash` | [`GET /v3/transactions/{id}/verify`](https://developer.flutterwave.com/v3.0/reference/verify-transaction) |
+| Pesapal | [developer.pesapal.com](https://developer.pesapal.com/) | None — [re-query](https://developer.pesapal.com/how-to-integrate/e-commerce/api-30-json/gettransactionstatus) | `GetTransactionStatus?orderTrackingId=` |
+
+> Bank callback signing (KCB, Stanbic, NCBA, Co-op) is largely undocumented publicly; obtain the exact scheme from your onboarding pack. Until a signature is configured, these and the unsigned mobile-money providers settle only via the re-query confirmation path.
+
+### Webhook security
+
+Callback routes are public, so the package never trusts a raw callback to move money:
+
+1. **IP allowlist** (optional, per provider) — `billing.webhooks.providers.<name>.ip_allowlist`; requests from other IPs are rejected.
+2. **Verified callbacks** — a valid provider signature, or a configured shared secret (`billing.webhooks.providers.<name>.secret`, sent as `?secret=` on the registered URL or an `X-Webhook-Secret` header) — settle inline.
+3. **Unverified callbacks** — enqueue an async job that re-queries the provider's own status API and settles **only on a confirmed result**, so a forged or replayed callback settles nothing. Controlled by `billing.webhooks.confirm_unverified` (default on) with retry backoff `billing.webhooks.confirm_backoff`.
+
 All providers implement `PaymentProviderInterface`:
 
 ```php

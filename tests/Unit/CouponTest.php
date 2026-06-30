@@ -57,6 +57,22 @@ class CouponTest extends BaseTestCase
         $this->assertEquals('20% off', $coupon->discountDescription());
     }
 
+    public function test_percent_discount_is_clamped_to_the_amount(): void
+    {
+        // A malformed coupon (percent > 100) must never discount more than the
+        // amount, which would otherwise floor the charge to 0.
+        $coupon = Coupon::create([
+            'ulid' => Str::ulid()->toBase32(),
+            'name' => 'Broken 150% Off',
+            'discount_type' => DiscountType::PERCENT,
+            'discount_value' => 150,
+            'duration' => CouponDuration::ONCE,
+            'is_active' => true,
+        ]);
+
+        $this->assertSame(100000, $coupon->calculateDiscount(100000));
+    }
+
     public function test_create_fixed_coupon(): void
     {
         $coupon = Coupon::create([

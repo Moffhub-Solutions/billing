@@ -50,7 +50,7 @@ class SplitPaymentService
         array $options = [],
         array $attributes = [],
     ): array {
-        $limits = $this->paymentManager->getProviderLimits($provider);
+        $limits = $this->paymentManager->getProviderLimits($provider, $billable);
         $tranches = $this->splitter->split($amount, $limits, $provider, $this->usedToday($billable, $provider));
 
         $isSplit = count($tranches) > 1;
@@ -181,7 +181,7 @@ class SplitPaymentService
      */
     public function advance(Payment $justCompleted, Model&BillableInterface $billable, array $options = []): ?Payment
     {
-        if (! $this->autoAdvanceEnabled() || $justCompleted->payment_group === null) {
+        if (! $this->autoAdvanceEnabled($billable) || $justCompleted->payment_group === null) {
             return null;
         }
 
@@ -227,7 +227,7 @@ class SplitPaymentService
      */
     protected function advanceSynchronously(Payment $payment, Model&BillableInterface $billable, array $options): void
     {
-        if (! $this->autoAdvanceEnabled()) {
+        if (! $this->autoAdvanceEnabled($billable)) {
             return;
         }
 
@@ -276,9 +276,9 @@ class SplitPaymentService
         });
     }
 
-    protected function autoAdvanceEnabled(): bool
+    protected function autoAdvanceEnabled(?Model $billable = null): bool
     {
-        return (bool) config('billing.split_payments.auto_advance', true);
+        return (bool) billing_setting('split_payments.auto_advance', true, $billable);
     }
 
     protected function mapStatus(string $status): PaymentStatus

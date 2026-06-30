@@ -6,22 +6,25 @@ namespace Moffhub\Billing\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
 use Moffhub\Billing\Http\Resources\SubscriptionAddonResource;
 use Moffhub\Billing\Models\Feature;
 use Moffhub\Billing\Models\Subscription;
 use Moffhub\Billing\Services\FeatureResolver;
 
-class SubscriptionAddonController extends Controller
+class SubscriptionAddonController extends BillingController
 {
     /**
      * List add-ons for a subscription.
      */
-    public function index(int $subscription): JsonResponse
+    public function index(Request $request, int $subscription): JsonResponse
     {
-        $subscription = Subscription::findOrFail($subscription);
+        $subscriptionModel = $this->resolveOwnedSubscription($request, $subscription);
 
-        $addons = $subscription->addons()
+        if ($subscriptionModel === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        $addons = $subscriptionModel->addons()
             ->with('feature')
             ->get();
 
@@ -39,9 +42,13 @@ class SubscriptionAddonController extends Controller
             'feature' => ['required', 'string'],
         ]);
 
-        $featureSlug = $request->string('feature')->toString();
+        $subscriptionModel = $this->resolveOwnedSubscription($request, $subscription);
 
-        $subscriptionModel = Subscription::query()->findOrFail($subscription);
+        if ($subscriptionModel === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        $featureSlug = $request->string('feature')->toString();
 
         $feature = Feature::query()->where('slug', $featureSlug)
             ->where('is_addon', true)
@@ -66,10 +73,12 @@ class SubscriptionAddonController extends Controller
             ], 422);
         }
 
+        // Price is intentionally NOT taken from the request: a tenant must not
+        // be able to set their own add-on price (e.g. 0). It defaults to the
+        // feature's addon_price; a custom price_override is a back-office action.
         $addon = $subscriptionModel->addons()->create([
             'feature_id' => $feature->id,
             'status' => 'active',
-            'price_override' => $request->input('price_override'),
             'enabled_at' => now(),
         ]);
 
@@ -87,9 +96,13 @@ class SubscriptionAddonController extends Controller
     /**
      * Remove an add-on from a subscription.
      */
-    public function destroy(int $subscription, int $addon): JsonResponse
+    public function destroy(Request $request, int $subscription, int $addon): JsonResponse
     {
-        $subscriptionModel = Subscription::query()->findOrFail($subscription);
+        $subscriptionModel = $this->resolveOwnedSubscription($request, $subscription);
+
+        if ($subscriptionModel === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
 
         $addonModel = $subscriptionModel->addons()->findOrFail($addon);
 
@@ -104,5 +117,24 @@ class SubscriptionAddonController extends Controller
         return response()->json([
             'message' => 'Add-on removed.',
         ]);
+    }
+
+    /**
+     * Resolve a subscription only if it belongs to the request's billable.
+     * Returns null when there is no billable; throws 404 when the subscription
+     * is not owned, so cross-tenant ids cannot be read or mutated.
+     */
+    private function resolveOwnedSubscription(Request $request, int $subscription): ?Subscription
+    {
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return null;
+        }
+
+        return Subscription::query()
+            ->where('billable_type', $billable->getMorphClass())
+            ->where('billable_id', $billable->getKey())
+            ->findOrFail($subscription);
     }
 }

@@ -163,7 +163,9 @@ class NcbaProviderTest extends BaseTestCase
             'status' => 'completed',
         ]);
 
-        $this->assertTrue($this->provider->verifyWebhook($request));
+        // A signing secret is configured, so an unsigned structure-only payload
+        // is rejected (no structure fallback to bypass via a missing header).
+        $this->assertFalse($this->provider->verifyWebhook($request));
     }
 
     public function test_verify_webhook_invalid_structure(): void

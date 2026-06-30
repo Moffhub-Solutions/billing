@@ -73,17 +73,56 @@ abstract class BasePaymentProvider implements PaymentProviderInterface
      */
     protected function scrubSensitiveData(array $data): array
     {
-        $scrubKeys = ['password', 'secret', 'token', 'api_key', 'consumer_secret', 'auth_token', 'passkey'];
+        // Exact-match keys: the operator-tunable list from config, plus PII/short
+        // keys that are unsafe to match by substring.
+        $configured = config('billing.security.scrub_keys', []);
+        $exact = is_array($configured)
+            ? array_values(array_filter(array_map(
+                fn ($k): ?string => is_string($k) ? strtolower($k) : null,
+                $configured,
+            )))
+            : [];
+        $exact = array_merge($exact, [
+            'pin', 'cvv', 'card_number', 'phone', 'phonenumber', 'partya', 'msisdn', 'email', 'password',
+        ]);
+
+        // Substring matches: any key containing one of these is a secret/PII.
+        $substrings = [
+            'secret', 'password', 'token', 'passkey', 'api_key', 'apikey',
+            'client_id', 'client_secret', 'consumer_key', 'consumer_secret',
+            'private_key', 'encryption_key', 'public_key', 'access_token',
+            'authorization', 'card_number',
+        ];
 
         foreach ($data as $key => $value) {
+            $lower = strtolower((string) $key);
+
             if (is_array($value)) {
                 $data[$key] = $this->scrubSensitiveData($value);
-            } elseif (in_array(strtolower((string) $key), $scrubKeys, true)) {
+
+                continue;
+            }
+
+            if (in_array($lower, $exact, true) || $this->keyMatchesAny($lower, $substrings)) {
                 $data[$key] = '***REDACTED***';
             }
         }
 
         return $data;
+    }
+
+    /**
+     * @param  array<int, string>  $needles
+     */
+    private function keyMatchesAny(string $key, array $needles): bool
+    {
+        foreach ($needles as $needle) {
+            if (str_contains($key, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -15,7 +15,7 @@ class FeatureResolver implements FeatureResolverInterface
      */
     public function hasFeature(Model $billable, string $featureSlug): bool
     {
-        $ttlRaw = config('billing.features.cache_ttl', 300);
+        $ttlRaw = billing_setting('features.cache_ttl', 300, $billable);
         $ttl = is_numeric($ttlRaw) ? (int) $ttlRaw : 300;
         $prefix = $this->cachePrefix();
 

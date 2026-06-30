@@ -436,7 +436,9 @@ class MpesaProviderTest extends BaseTestCase
         ]));
         $request->headers->set('Content-Type', 'application/json');
 
-        $this->assertTrue($this->provider->verifyWebhook($request));
+        // Daraja callbacks are unsigned; the payload alone is never "verified".
+        // Authenticity is established by the controller's async STK re-query.
+        $this->assertFalse($this->provider->verifyWebhook($request));
     }
 
     public function test_verify_webhook_with_empty_body_fails(): void

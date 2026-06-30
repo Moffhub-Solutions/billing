@@ -339,10 +339,12 @@ class PaymentApiTest extends BaseTestCase
             ->assertJsonPath('message', 'Only completed payments can be refunded.');
     }
 
-    public function test_refund_payment_partial(): void
+    public function test_refund_payment_partial_keeps_payment_completed(): void
     {
         $payment = $this->createPayment($this->company, PaymentStatus::COMPLETED);
 
+        // Captured 250000; refunding 100000 is partial, so the payment stays
+        // COMPLETED (the remainder can still be refunded) and tracks the total.
         $response = $this->actingAs($this->user)
             ->postJson("/api/billing/payments/{$payment->id}/refund", [
                 'amount' => 100000,
@@ -351,7 +353,57 @@ class PaymentApiTest extends BaseTestCase
 
         $response->assertOk()
             ->assertJsonPath('message', 'Payment refunded.')
+            ->assertJsonPath('data.status', 'completed');
+
+        $meta = $payment->refresh()->metadata;
+        $this->assertIsArray($meta);
+        $this->assertSame(100000, $meta['refunded_amount'] ?? null);
+    }
+
+    public function test_refund_amount_cannot_exceed_captured(): void
+    {
+        $payment = $this->createPayment($this->company, PaymentStatus::COMPLETED);
+
+        // Captured is 250000; asking for more must be rejected and settle nothing.
+        $this->actingAs($this->user)
+            ->postJson("/api/billing/payments/{$payment->id}/refund", ['amount' => 9_999_999])
+            ->assertStatus(422);
+
+        $this->assertSame(PaymentStatus::COMPLETED, $payment->refresh()->status);
+        $this->assertArrayNotHasKey('refunded_amount', $payment->metadata ?? []);
+    }
+
+    public function test_full_refund_marks_payment_refunded(): void
+    {
+        $payment = $this->createPayment($this->company, PaymentStatus::COMPLETED);
+
+        // Omitting amount refunds the full remaining captured amount.
+        $this->actingAs($this->user)
+            ->postJson("/api/billing/payments/{$payment->id}/refund")
+            ->assertOk()
             ->assertJsonPath('data.status', 'refunded');
+
+        $meta = $payment->refresh()->metadata;
+        $this->assertIsArray($meta);
+        $this->assertSame(250000, $meta['refunded_amount'] ?? null);
+    }
+
+    public function test_partial_refunds_cannot_cumulatively_exceed_captured(): void
+    {
+        $payment = $this->createPayment($this->company, PaymentStatus::COMPLETED);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/billing/payments/{$payment->id}/refund", ['amount' => 200000])
+            ->assertOk();
+
+        // 200000 already refunded; a further 100000 would exceed the 250000 cap.
+        $this->actingAs($this->user)
+            ->postJson("/api/billing/payments/{$payment->id}/refund", ['amount' => 100000])
+            ->assertStatus(422);
+
+        $meta = $payment->refresh()->metadata;
+        $this->assertIsArray($meta);
+        $this->assertSame(200000, $meta['refunded_amount'] ?? null);
     }
 
     public function test_refund_payment_not_found(): void

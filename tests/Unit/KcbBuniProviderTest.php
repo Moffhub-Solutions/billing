@@ -191,7 +191,9 @@ class KcbBuniProviderTest extends BaseTestCase
             ],
         ]);
 
-        $this->assertTrue($this->provider->verifyWebhook($request));
+        // A signing secret is configured, so an unsigned structure-only payload
+        // is rejected (no structure fallback to bypass via a missing header).
+        $this->assertFalse($this->provider->verifyWebhook($request));
     }
 
     public function test_verify_webhook_v1_structure(): void
@@ -202,7 +204,9 @@ class KcbBuniProviderTest extends BaseTestCase
             'customerReference' => 'INV-001',
         ]);
 
-        $this->assertTrue($this->provider->verifyWebhook($request));
+        // A signing secret is configured, so an unsigned structure-only payload
+        // is rejected (no structure fallback to bypass via a missing header).
+        $this->assertFalse($this->provider->verifyWebhook($request));
     }
 
     // ─── Webhook: V2 IPN Parsing (nested format) ──────────────────────

@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\Eloquent\Model;
 use Moffhub\Billing\Services\BillingService;
+use Moffhub\Billing\Services\BillingSettings;
 
 if (! function_exists('billing')) {
     /**
@@ -11,6 +13,23 @@ if (! function_exists('billing')) {
     function billing(): BillingService
     {
         return app('billing');
+    }
+}
+
+if (! function_exists('billing_setting')) {
+    /**
+     * Resolve a runtime-overridable billing setting.
+     *
+     * Resolution order: per-billable override, global override, then the
+     * config/billing.php default. Use this (instead of config('billing.*'))
+     * for values operators may change at runtime without a redeploy.
+     */
+    function billing_setting(string $key, mixed $default = null, ?Model $billable = null): mixed
+    {
+        /** @var BillingSettings $settings */
+        $settings = app('billing.settings');
+
+        return $settings->get($key, $default, $billable);
     }
 }
 

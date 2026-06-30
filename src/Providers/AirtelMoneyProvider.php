@@ -174,9 +174,10 @@ class AirtelMoneyProvider extends BasePaymentProvider
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        $transaction = $request->input('transaction');
-
-        return is_array($transaction) && isset($transaction['id']);
+        // Airtel Money callbacks are not signed, so the payload is not
+        // self-authenticating. Report "unverified": WebhookController confirms
+        // the outcome via an async transaction-status re-query before settling.
+        return false;
     }
 
     #[\Override]

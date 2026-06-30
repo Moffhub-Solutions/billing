@@ -106,6 +106,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Admin Gate
+    |--------------------------------------------------------------------------
+    |
+    | Authorization for back-office routes (managing plans, features, coupons,
+    | and voiding / marking invoices paid), enforced by the `billing.admin`
+    | middleware. Set to a Laravel Gate ability name to use your own policy;
+    | otherwise the billable's `isBillingAdmin()` (see admin_bypass_method) is
+    | used. When neither grants access the routes fail closed (403).
+    |
+    */
+    'admin_gate' => env('BILLING_ADMIN_GATE'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Invoice Settings
     |--------------------------------------------------------------------------
     */
@@ -158,6 +172,36 @@ return [
 
         // Allow overage (continue tracking beyond limit) or hard-stop
         'allow_overage' => false,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Runtime Settings (database-backed overrides)
+    |--------------------------------------------------------------------------
+    |
+    | A subset of the values in this file is "runtime overridable": operators
+    | (and individual billables/tenants) can change them at runtime through the
+    | BillingSettings resolver, which stores overrides in the billing_settings
+    | table. This avoids editing this file and re-running `php artisan
+    | config:cache` (or redeploying) just to flip a tax rate or grace period.
+    |
+    | Resolution order for an overridable key:
+    |   per-billable override -> global override -> the value in this file.
+    |
+    | Credentials, table names, route prefixes, and other deploy-time keys are
+    | deliberately NOT overridable (see the allowlist on the resolver) so secrets
+    | never live in this table and boot-time wiring stays stable.
+    |
+    */
+    'settings' => [
+        // Cache resolved overrides to avoid a query per read. Set to 0 to
+        // disable caching (e.g. in tests).
+        'cache_ttl' => env('BILLING_SETTINGS_CACHE_TTL', 300), // seconds
+
+        'cache_prefix' => 'billing_settings',
+
+        // Cache store to use. Null = the application default store.
+        'cache_store' => env('BILLING_SETTINGS_CACHE_STORE'),
     ],
 
     /*
@@ -366,6 +410,39 @@ return [
         'prefix' => env('BILLING_WEBHOOKS_PREFIX', 'billing/webhooks'),
         'middleware' => [],
         'rate_limit' => env('BILLING_WEBHOOKS_RATE_LIMIT', 60),
+
+        /*
+        | When a webhook is NOT cryptographically verified (the provider has no
+        | signature, or none/secret is configured), do not trust the payload to
+        | settle a payment. Instead enqueue an async job that re-queries the
+        | provider's own status API and settles only on a confirmed result, so a
+        | forged callback settles nothing. Strongly recommended on.
+        */
+        'confirm_unverified' => env('BILLING_WEBHOOKS_CONFIRM_UNVERIFIED', true),
+
+        // Async re-query retry schedule (seconds) for callbacks that arrive
+        // before the provider's status API is consistent. After the last delay
+        // the job gives up and leaves the payment for the next callback/cron.
+        'confirm_backoff' => [30, 120, 600],
+
+        /*
+        | Per-provider edge controls (all optional):
+        |   'secret'       => shared token required on the callback (sent as
+        |                     ?secret= on the registered URL or X-Webhook-Secret
+        |                     header). Good for new integrations without a native
+        |                     signature; verified requests take the fast path.
+        |   'ip_allowlist' => IPs/CIDRs the provider posts from. When set, a
+        |                     request from any other IP is rejected outright.
+        |
+        | Example:
+        |   'mpesa' => [
+        |       'secret' => env('MPESA_WEBHOOK_SECRET'),
+        |       'ip_allowlist' => ['196.201.214.0/24', '196.201.213.0/24'],
+        |   ],
+        */
+        'providers' => [
+            //
+        ],
     ],
 
     /*
@@ -391,8 +468,10 @@ return [
     |
     */
     'security' => [
-        // Encrypt PII fields at rest (phone, email, token on PaymentToken, etc.)
-        'encrypt_at_rest' => env('BILLING_ENCRYPT_AT_REST', false),
+        // Encrypt PII fields at rest (phone, email, token on PaymentToken, etc.).
+        // On by default: payment tokens and customer PII should not sit in
+        // plaintext. Uses the app's APP_KEY, so keep that key stable/backed up.
+        'encrypt_at_rest' => env('BILLING_ENCRYPT_AT_REST', true),
 
         // Fields to encrypt when using FieldEncryptor on arrays (e.g., webhook payloads)
         'encrypted_fields' => [
@@ -449,5 +528,7 @@ return [
         'promotion_codes' => 'billing_promotion_codes',
         'coupon_redemptions' => 'billing_coupon_redemptions',
         'payment_tokens' => 'billing_payment_tokens',
+        'settings' => 'billing_settings',
+        'payment_proofs' => 'billing_payment_proofs',
     ],
 ];

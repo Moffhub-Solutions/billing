@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Moffhub\Billing;
 
 use Illuminate\Config\Repository;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Manager;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
@@ -23,6 +24,7 @@ use Moffhub\Billing\Providers\PaystackProvider;
 use Moffhub\Billing\Providers\PesapalProvider;
 use Moffhub\Billing\Providers\StanbicProvider;
 use Moffhub\Billing\Providers\TkashProvider;
+use Moffhub\Billing\Services\BillingSettings;
 
 class PaymentManager extends Manager
 {
@@ -272,7 +274,9 @@ class PaymentManager extends Manager
 
     public function getDefaultDriver(): string
     {
-        return $this->configString('billing.default_provider', 'manual');
+        $value = $this->settings()->get('default_provider', 'manual');
+
+        return is_string($value) && $value !== '' ? $value : 'manual';
     }
 
     /**
@@ -301,7 +305,7 @@ class PaymentManager extends Manager
             fn (string $provider): bool => $this->isProviderConfigured($provider),
         ));
 
-        $enabledRaw = $this->config()->get('billing.enabled_providers', []);
+        $enabledRaw = $this->settings()->get('enabled_providers', []);
         $enabled = is_array($enabledRaw)
             ? array_values(array_filter($enabledRaw, fn ($v): bool => is_string($v) && $v !== ''))
             : [];
@@ -329,10 +333,10 @@ class PaymentManager extends Manager
         // Cash (the manual provider) is always offered unless explicitly turned
         // off via billing.offer_cash. An explicit enabled_providers list that
         // names "manual" still wins, since the operator opted in deliberately.
-        $curated = $this->config()->get('billing.enabled_providers', []);
+        $curated = $this->settings()->get('enabled_providers', []);
         $manualCurated = is_array($curated) && in_array('manual', $curated, true);
 
-        if (! $manualCurated && ! (bool) $this->config()->get('billing.offer_cash', true)) {
+        if (! $manualCurated && ! (bool) $this->settings()->get('offer_cash', true)) {
             $providers = array_values(array_filter($providers, fn (string $p): bool => $p !== 'manual'));
         }
 
@@ -386,23 +390,62 @@ class PaymentManager extends Manager
     /**
      * Get a provider's per-transaction limits.
      *
-     * Amounts are in cents. A null value means "no cap". Reads
-     * `billing.providers.<provider>.limits`, falling back to no limits.
+     * Amounts are in cents. A null value means "no cap". Each limit resolves
+     * through the runtime settings layer (per-billable override, then global
+     * override, then `billing.providers.<provider>.limits` in config), so an
+     * operator can tighten a provider cap without redeploying.
      *
      * @return array{max_amount: int|null, max_per_day: int|null}
      */
-    public function getProviderLimits(string $provider): array
+    public function getProviderLimits(string $provider, ?Model $billable = null): array
     {
         $raw = $this->config()->get("billing.providers.{$provider}.limits", []);
         $limits = is_array($raw) ? $raw : [];
 
-        $maxAmount = $limits['max_amount'] ?? null;
-        $maxPerDay = $limits['max_per_day'] ?? null;
+        $maxAmount = $this->settings()->get(
+            "providers.{$provider}.limits.max_amount",
+            $limits['max_amount'] ?? null,
+            $billable,
+        );
+        $maxPerDay = $this->settings()->get(
+            "providers.{$provider}.limits.max_per_day",
+            $limits['max_per_day'] ?? null,
+            $billable,
+        );
+
+        // A runtime/per-tenant override may only tighten a cap, never raise it
+        // above the provider's real (config) ceiling, so a tenant can't lift
+        // their own limit to bypass split-payment enforcement.
+        $configMax = is_numeric($limits['max_amount'] ?? null) ? (int) $limits['max_amount'] : null;
+        $configPerDay = is_numeric($limits['max_per_day'] ?? null) ? (int) $limits['max_per_day'] : null;
 
         return [
-            'max_amount' => is_numeric($maxAmount) && (int) $maxAmount > 0 ? (int) $maxAmount : null,
-            'max_per_day' => is_numeric($maxPerDay) && (int) $maxPerDay > 0 ? (int) $maxPerDay : null,
+            'max_amount' => $this->tighterLimit(
+                is_numeric($maxAmount) && (int) $maxAmount > 0 ? (int) $maxAmount : null,
+                $configMax !== null && $configMax > 0 ? $configMax : null,
+            ),
+            'max_per_day' => $this->tighterLimit(
+                is_numeric($maxPerDay) && (int) $maxPerDay > 0 ? (int) $maxPerDay : null,
+                $configPerDay !== null && $configPerDay > 0 ? $configPerDay : null,
+            ),
         ];
+    }
+
+    /**
+     * The tighter (smaller positive) of two caps. Null means "no cap", so a
+     * null on either side defers to the other; both null means no cap.
+     */
+    private function tighterLimit(?int $resolved, ?int $ceiling): ?int
+    {
+        if ($resolved === null) {
+            return $ceiling;
+        }
+
+        if ($ceiling === null) {
+            return $resolved;
+        }
+
+        return min($resolved, $ceiling);
     }
 
     /**
@@ -434,6 +477,11 @@ class PaymentManager extends Manager
     private function config(): Repository
     {
         return $this->app->make('config');
+    }
+
+    private function settings(): BillingSettings
+    {
+        return $this->app->make(BillingSettings::class);
     }
 
     private function configString(string $key, string $default = ''): string

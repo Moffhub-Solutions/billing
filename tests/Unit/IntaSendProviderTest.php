@@ -219,17 +219,26 @@ class IntaSendProviderTest extends BaseTestCase
 
     // ─── Webhook ───────────────────────────────────────────────────────
 
-    public function test_verify_webhook_with_signature(): void
+    public function test_verify_webhook_with_matching_challenge(): void
     {
-        $payload = json_encode(['invoice_id' => 'INV-001']);
-        $this->assertIsString($payload);
-        $signature = hash_hmac('sha256', $payload, 'ISSecretKey_test_12345');
-
-        $request = Request::create('/webhook', 'POST', [], [], [], [
-            'HTTP_X_INTASEND_SIGNATURE' => $signature,
-        ], $payload);
+        // IntaSend authenticates webhooks with a configured "challenge" value
+        // echoed in the body (not an HMAC). A matching challenge verifies.
+        $request = Request::create('/webhook', 'POST', [
+            'invoice_id' => 'INV-001',
+            'challenge' => 'ISSecretKey_test_12345',
+        ]);
 
         $this->assertTrue($this->provider->verifyWebhook($request));
+    }
+
+    public function test_verify_webhook_rejects_wrong_challenge(): void
+    {
+        $request = Request::create('/webhook', 'POST', [
+            'invoice_id' => 'INV-001',
+            'challenge' => 'wrong-challenge',
+        ]);
+
+        $this->assertFalse($this->provider->verifyWebhook($request));
     }
 
     public function test_verify_webhook_invalid_signature(): void
@@ -244,13 +253,15 @@ class IntaSendProviderTest extends BaseTestCase
         $this->assertFalse($this->provider->verifyWebhook($request));
     }
 
-    public function test_verify_webhook_structure_fallback(): void
+    public function test_verify_webhook_rejects_payload_without_challenge(): void
     {
+        // No challenge present: the payload alone is never "verified".
+        // Authenticity comes from the controller's async re-query.
         $request = Request::create('/webhook', 'POST', [
             'invoice_id' => 'INV-001',
         ]);
 
-        $this->assertTrue($this->provider->verifyWebhook($request));
+        $this->assertFalse($this->provider->verifyWebhook($request));
     }
 
     public function test_parse_webhook_completed(): void

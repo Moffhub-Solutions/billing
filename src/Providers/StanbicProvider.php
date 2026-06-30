@@ -156,11 +156,19 @@ class StanbicProvider extends BasePaymentProvider
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
+        // Fail closed when no signing secret is configured: hashing with an
+        // empty key produces an attacker-computable HMAC. With no secret the
+        // callback is reported "unverified" and WebhookController confirms via
+        // async re-query instead.
+        if ($this->apiSecret === '') {
+            return false;
+        }
+
         $signature = (string) $request->header('X-Stanbic-Signature', '');
         $payload = $request->getContent();
         $expected = hash_hmac('sha256', $payload, $this->apiSecret);
 
-        return hash_equals($expected, $signature);
+        return $signature !== '' && hash_equals($expected, $signature);
     }
 
     #[\Override]

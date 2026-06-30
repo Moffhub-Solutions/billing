@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Services;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Moffhub\Billing\Contracts\TaxCalculatorInterface;
 use Moffhub\Billing\Enums\InvoiceStatus;
@@ -23,7 +24,8 @@ class InvoiceService
     public function generateForSubscription(Subscription $subscription): Invoice
     {
         $plan = $subscription->plan;
-        $currencyDefault = config('billing.currency', 'KES');
+        $billable = $subscription->billable;
+        $currencyDefault = billing_setting('currency', 'KES', $billable);
         $currency = $plan->currency ?? (is_string($currencyDefault) ? $currencyDefault : 'KES');
 
         // Calculate plan line item
@@ -74,7 +76,7 @@ class InvoiceService
             'tax_amount' => $taxAmount,
             'tax_rate' => $taxRate,
             'total' => $total,
-            'due_date' => now()->addDays(is_numeric(config('billing.invoices.due_days', 30)) ? (int) config('billing.invoices.due_days', 30) : 30),
+            'due_date' => now()->addDays($this->dueDays($billable)),
             'metadata' => [
                 'tax_breakdown' => $taxResult['breakdown'],
                 'tax_label' => $taxResult['tax_label'],
@@ -156,11 +158,24 @@ class InvoiceService
     }
 
     /**
+     * Resolve the invoice due-day window for a billable (runtime-overridable).
+     */
+    protected function dueDays(?Model $billable): int
+    {
+        $raw = billing_setting('invoices.due_days', 30, $billable);
+
+        return is_numeric($raw) ? (int) $raw : 30;
+    }
+
+    /**
      * Generate a sequential invoice number.
+     *
+     * The prefix is runtime-overridable, but resolved globally: the sequence it
+     * keys (one running counter per prefix+year) is system-wide, not per-tenant.
      */
     protected function generateInvoiceNumber(): string
     {
-        $prefixRaw = config('billing.invoices.prefix', 'INV');
+        $prefixRaw = billing_setting('invoices.prefix', 'INV');
         $prefix = is_string($prefixRaw) ? $prefixRaw : 'INV';
         $year = now()->year;
         $paddingRaw = config('billing.invoices.sequence_padding', 4);

@@ -128,9 +128,11 @@ class Coupon extends Model
      */
     public function calculateDiscount(int $amount): int
     {
+        // Clamp so a malformed coupon (percent > 100 or negative, fixed above the
+        // amount) can never discount more than the amount or go negative.
         return match ($this->discount_type) {
-            DiscountType::PERCENT => (int) round($amount * ($this->discount_value / 100)),
-            DiscountType::FIXED => min($this->discount_value, $amount),
+            DiscountType::PERCENT => (int) round($amount * (max(0, min($this->discount_value, 100)) / 100)),
+            DiscountType::FIXED => max(0, min($this->discount_value, $amount)),
         };
     }
 
@@ -139,7 +141,7 @@ class Coupon extends Model
      */
     public function discountDescription(): string
     {
-        $currency = config('billing.currency', 'KES');
+        $currency = billing_setting('currency', 'KES');
         $currencyString = is_string($currency) ? $currency : 'KES';
 
         return match ($this->discount_type) {

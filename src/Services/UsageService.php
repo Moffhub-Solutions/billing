@@ -163,7 +163,7 @@ class UsageService
         }
 
         $percentage = ($record->usage_count / $record->usage_limit) * 100;
-        $thresholdsRaw = config('billing.usage.alert_thresholds', [80, 90, 100]);
+        $thresholdsRaw = billing_setting('usage.alert_thresholds', [80, 90, 100], $billable);
         $thresholds = is_array($thresholdsRaw) ? $thresholdsRaw : [80, 90, 100];
 
         foreach ($thresholds as $threshold) {

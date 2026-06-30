@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Jobs;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
@@ -21,7 +23,7 @@ use Moffhub\Billing\Models\Subscription;
 use Moffhub\Billing\PaymentManager;
 use Moffhub\Billing\Services\UsageService;
 
-class ProcessRenewals implements ShouldQueue
+class ProcessRenewals implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -45,10 +47,29 @@ class ProcessRenewals implements ShouldQueue
 
     protected function processRenewal(Subscription $subscription, PaymentManager $paymentManager): void
     {
+        // Re-check under a row lock that the subscription is still due. A queue
+        // retry (after a charge already succeeded and advanced the period) or an
+        // overlapping run then finds the period in the future and skips, so the
+        // customer is not charged twice.
+        $stillDue = DB::transaction(function () use ($subscription): bool {
+            $locked = Subscription::query()->lockForUpdate()->find($subscription->id);
+
+            return $locked instanceof Subscription
+                && $locked->status === SubscriptionStatus::ACTIVE
+                && $locked->cancelled_at === null
+                && $locked->current_period_end !== null
+                && $locked->current_period_end->lessThanOrEqualTo(now());
+        });
+
+        if (! $stillDue) {
+            return;
+        }
+
         $plan = $subscription->plan;
         $provider = $subscription->payment_provider ?? $paymentManager->getDefaultDriver();
-        $currencyRaw = config('billing.currency', 'KES');
-        $currency = is_string($currencyRaw) ? $currencyRaw : 'KES';
+        // Charge in the plan's own currency (what the subscription is priced in),
+        // not a global setting, so the charged amount and currency can't diverge.
+        $currency = $plan->currency !== '' ? $plan->currency : 'KES';
         $amount = $this->renewalAmount($subscription);
 
         try {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Jobs;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -21,7 +22,7 @@ use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\Models\Subscription;
 use Moffhub\Billing\PaymentManager;
 
-class ProcessTrialConversions implements ShouldQueue
+class ProcessTrialConversions implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -42,8 +43,8 @@ class ProcessTrialConversions implements ShouldQueue
     {
         $plan = $subscription->plan;
         $provider = $subscription->payment_provider ?? $paymentManager->getDefaultDriver();
-        $currencyRaw = config('billing.currency', 'KES');
-        $currency = is_string($currencyRaw) ? $currencyRaw : 'KES';
+        // Charge in the plan's own currency, not a global setting.
+        $currency = $plan->currency !== '' ? $plan->currency : 'KES';
 
         try {
             $driver = $paymentManager->driver($provider);
@@ -111,7 +112,7 @@ class ProcessTrialConversions implements ShouldQueue
      */
     protected function handleFailure(Subscription $subscription, string $provider, string $currency, array $result): void
     {
-        $gracePeriodRaw = config('billing.subscriptions.grace_period_days', 7);
+        $gracePeriodRaw = billing_setting('subscriptions.grace_period_days', 7, $subscription->billable);
         $gracePeriodDays = is_numeric($gracePeriodRaw) ? (int) $gracePeriodRaw : 7;
 
         // If the trial ended within the grace period window, mark as past_due

@@ -122,7 +122,7 @@ class PromotionCode extends Model
         }
 
         if ($this->minimum_amount !== null && $amount < $this->minimum_amount) {
-            $currency = config('billing.currency', 'KES');
+            $currency = billing_setting('currency', 'KES', $billable);
             $currencyString = is_string($currency) ? $currency : 'KES';
             $formatted = $currencyString.' '.number_format($this->minimum_amount / 100, 2);
             $errors[] = "Minimum purchase amount of {$formatted} required.";

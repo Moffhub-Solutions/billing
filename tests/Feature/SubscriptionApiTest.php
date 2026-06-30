@@ -219,7 +219,7 @@ class SubscriptionApiTest extends BaseTestCase
     {
         $subscription = $this->createSubscription($this->company, $this->starterPlan);
 
-        $response = $this->getJson("/api/billing/subscriptions/{$subscription->id}");
+        $response = $this->actingAs($this->user)->getJson("/api/billing/subscriptions/{$subscription->id}");
 
         $response->assertOk()
             ->assertJsonPath('data.status', 'active')
@@ -230,9 +230,30 @@ class SubscriptionApiTest extends BaseTestCase
 
     public function test_show_subscription_not_found(): void
     {
-        $response = $this->getJson('/api/billing/subscriptions/99999');
+        $response = $this->actingAs($this->user)->getJson('/api/billing/subscriptions/99999');
 
         $response->assertNotFound();
+    }
+
+    public function test_show_subscription_denies_cross_tenant(): void
+    {
+        $subscription = $this->createSubscription($this->company, $this->starterPlan);
+
+        $otherCompany = Company::create(['name' => 'Other Co']);
+        $otherUser = User::create([
+            'name' => 'Other User',
+            'email' => 'other-sub@example.com',
+            'company_id' => $otherCompany->id,
+        ]);
+
+        // Another tenant's subscription must resolve to not-found, not leak.
+        $this->actingAs($otherUser)
+            ->getJson("/api/billing/subscriptions/{$subscription->id}")
+            ->assertNotFound();
+
+        $this->actingAs($otherUser)
+            ->postJson("/api/billing/subscriptions/{$subscription->id}/cancel")
+            ->assertNotFound();
     }
 
     // ─── Create Subscription ────────────────────────────────────────────
@@ -362,7 +383,7 @@ class SubscriptionApiTest extends BaseTestCase
 
         $subscription = $this->createSubscription($this->company, $this->starterPlan);
 
-        $response = $this->putJson("/api/billing/subscriptions/{$subscription->id}/change-plan", [
+        $response = $this->actingAs($this->user)->putJson("/api/billing/subscriptions/{$subscription->id}/change-plan", [
             'plan' => 'professional',
         ]);
 
@@ -384,7 +405,7 @@ class SubscriptionApiTest extends BaseTestCase
     {
         $subscription = $this->createSubscription($this->company, $this->starterPlan);
 
-        $response = $this->putJson("/api/billing/subscriptions/{$subscription->id}/change-plan", [
+        $response = $this->actingAs($this->user)->putJson("/api/billing/subscriptions/{$subscription->id}/change-plan", [
             'plan' => 'starter',
         ]);
 
@@ -396,7 +417,7 @@ class SubscriptionApiTest extends BaseTestCase
     {
         $subscription = $this->createSubscription($this->company, $this->starterPlan);
 
-        $response = $this->putJson("/api/billing/subscriptions/{$subscription->id}/change-plan", []);
+        $response = $this->actingAs($this->user)->putJson("/api/billing/subscriptions/{$subscription->id}/change-plan", []);
 
         $response->assertUnprocessable()
             ->assertJsonValidationErrors(['plan']);
@@ -410,7 +431,7 @@ class SubscriptionApiTest extends BaseTestCase
 
         $subscription = $this->createSubscription($this->company, $this->starterPlan);
 
-        $response = $this->postJson("/api/billing/subscriptions/{$subscription->id}/cancel", [
+        $response = $this->actingAs($this->user)->postJson("/api/billing/subscriptions/{$subscription->id}/cancel", [
             'immediately' => true,
         ]);
 
@@ -429,7 +450,7 @@ class SubscriptionApiTest extends BaseTestCase
 
         $subscription = $this->createSubscription($this->company, $this->starterPlan);
 
-        $response = $this->postJson("/api/billing/subscriptions/{$subscription->id}/cancel", [
+        $response = $this->actingAs($this->user)->postJson("/api/billing/subscriptions/{$subscription->id}/cancel", [
             'immediately' => false,
         ]);
 
@@ -452,7 +473,7 @@ class SubscriptionApiTest extends BaseTestCase
     {
         $subscription = $this->createSubscription($this->company, $this->starterPlan);
 
-        $response = $this->postJson("/api/billing/subscriptions/{$subscription->id}/pause");
+        $response = $this->actingAs($this->user)->postJson("/api/billing/subscriptions/{$subscription->id}/pause");
 
         $response->assertOk()
             ->assertJsonPath('message', 'Subscription paused.')
@@ -465,7 +486,7 @@ class SubscriptionApiTest extends BaseTestCase
 
         $subscription = $this->createSubscription($this->company, $this->starterPlan);
 
-        $response = $this->postJson("/api/billing/subscriptions/{$subscription->id}/pause");
+        $response = $this->actingAs($this->user)->postJson("/api/billing/subscriptions/{$subscription->id}/pause");
 
         $response->assertUnprocessable()
             ->assertJsonPath('message', 'Pausing subscriptions is not enabled.');
@@ -477,7 +498,7 @@ class SubscriptionApiTest extends BaseTestCase
     {
         $subscription = $this->createSubscription($this->company, $this->starterPlan, SubscriptionStatus::PAUSED);
 
-        $response = $this->postJson("/api/billing/subscriptions/{$subscription->id}/resume");
+        $response = $this->actingAs($this->user)->postJson("/api/billing/subscriptions/{$subscription->id}/resume");
 
         $response->assertOk()
             ->assertJsonPath('message', 'Subscription resumed.')

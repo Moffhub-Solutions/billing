@@ -19,7 +19,7 @@ class FeatureResource extends JsonResource
     #[\Override]
     public function toArray(Request $request): array
     {
-        $currency = config('billing.currency', 'KES');
+        $currency = billing_setting('currency', 'KES');
         $currencyString = is_string($currency) ? $currency : 'KES';
 
         return [

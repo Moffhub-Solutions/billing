@@ -151,7 +151,8 @@ class EnumTest extends TestCase
         $this->assertEquals('Card', PaymentMethod::CARD->label());
         $this->assertEquals('Bank Transfer', PaymentMethod::BANK->label());
         $this->assertEquals('Mobile Money', PaymentMethod::MOBILE_MONEY->label());
-        $this->assertEquals('Manual/Cash', PaymentMethod::MANUAL->label());
+        $this->assertEquals('Cash', PaymentMethod::MANUAL->label());
+        $this->assertEquals('Offline (proof of payment)', PaymentMethod::OFFLINE->label());
     }
 
     public function test_payment_method_values(): void

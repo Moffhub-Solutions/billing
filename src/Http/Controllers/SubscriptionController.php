@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Http\Controllers;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Moffhub\Billing\Contracts\BillableInterface;
 use Moffhub\Billing\Events\PlanChanged;
 use Moffhub\Billing\Events\SubscriptionCancelled;
 use Moffhub\Billing\Http\Requests\ChangeSubscriptionPlanRequest;
@@ -18,6 +21,17 @@ use Moffhub\Billing\Services\ProrationCalculator;
 
 class SubscriptionController extends BillingController
 {
+    /**
+     * @param  Model&BillableInterface  $billable
+     * @return Builder<Subscription>
+     */
+    private function ownedSubscriptions(Model $billable): Builder
+    {
+        return Subscription::query()
+            ->where('billable_type', $billable->getMorphClass())
+            ->where('billable_id', $billable->getKey());
+    }
+
     /**
      * List subscriptions for the authenticated billable.
      */
@@ -89,9 +103,15 @@ class SubscriptionController extends BillingController
     /**
      * Show a specific subscription.
      */
-    public function show(int $subscription): JsonResponse
+    public function show(Request $request, int $subscription): JsonResponse
     {
-        $subscriptionModel = Subscription::query()->with('plan', 'addons.feature')
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        $subscriptionModel = $this->ownedSubscriptions($billable)->with('plan', 'addons.feature')
             ->findOrFail($subscription);
 
         return response()->json([
@@ -154,7 +174,13 @@ class SubscriptionController extends BillingController
      */
     public function changePlan(ChangeSubscriptionPlanRequest $request, int $subscription): JsonResponse
     {
-        $subscriptionModel = Subscription::query()->with('plan')->findOrFail($subscription);
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        $subscriptionModel = $this->ownedSubscriptions($billable)->with('plan')->findOrFail($subscription);
 
         $oldPlan = $subscriptionModel->plan;
         $newPlan = Plan::query()->where('slug', $request->input('plan'))->firstOrFail();
@@ -201,7 +227,13 @@ class SubscriptionController extends BillingController
      */
     public function cancel(Request $request, int $subscription): JsonResponse
     {
-        $subscriptionModel = Subscription::query()->findOrFail($subscription);
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        $subscriptionModel = $this->ownedSubscriptions($billable)->findOrFail($subscription);
 
         $immediately = $request->boolean('immediately', false);
         $subscriptionModel->cancel($immediately);
@@ -237,13 +269,19 @@ class SubscriptionController extends BillingController
     /**
      * Pause a subscription.
      */
-    public function pause(int $subscription): JsonResponse
+    public function pause(Request $request, int $subscription): JsonResponse
     {
-        if (! config('billing.subscriptions.allow_pause', true)) {
+        if (! billing_setting('subscriptions.allow_pause', true)) {
             return response()->json(['message' => 'Pausing subscriptions is not enabled.'], 422);
         }
 
-        $subscriptionModel = Subscription::query()->findOrFail($subscription);
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        $subscriptionModel = $this->ownedSubscriptions($billable)->findOrFail($subscription);
         $subscriptionModel->pause();
 
         $reloaded = $subscriptionModel->fresh();
@@ -258,9 +296,15 @@ class SubscriptionController extends BillingController
     /**
      * Resume a paused subscription.
      */
-    public function resume(int $subscription): JsonResponse
+    public function resume(Request $request, int $subscription): JsonResponse
     {
-        $subscriptionModel = Subscription::query()->findOrFail($subscription);
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        $subscriptionModel = $this->ownedSubscriptions($billable)->findOrFail($subscription);
         $subscriptionModel->resume();
 
         $reloaded = $subscriptionModel->fresh();

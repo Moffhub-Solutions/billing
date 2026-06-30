@@ -21,9 +21,11 @@ use Moffhub\Billing\Http\Controllers\WebhookController;
 use Moffhub\Billing\Http\Middleware\CheckFeatureAccess;
 use Moffhub\Billing\Http\Middleware\CheckPlanAccess;
 use Moffhub\Billing\Http\Middleware\CheckUsageLimit;
+use Moffhub\Billing\Http\Middleware\EnsureBillingAdmin;
 use Moffhub\Billing\Http\Middleware\RequireSubscription;
 use Moffhub\Billing\Security\FieldEncryptor;
 use Moffhub\Billing\Services\BillingService;
+use Moffhub\Billing\Services\BillingSettings;
 use Moffhub\Billing\Services\CouponService;
 use Moffhub\Billing\Services\FeatureResolver;
 use Moffhub\Billing\Services\InvoiceService;
@@ -57,6 +59,13 @@ class BillingServiceProvider extends ServiceProvider
         ));
 
         $this->app->singleton('billing', fn ($app) => $app->make(BillingService::class));
+
+        $this->app->singleton(BillingSettings::class, fn ($app): BillingSettings => new BillingSettings(
+            $app->make('cache'),
+            $app->make('config'),
+        ));
+
+        $this->app->alias(BillingSettings::class, 'billing.settings');
 
         // Bind the default payment provider
         $this->app->bind(PaymentProviderInterface::class, fn ($app) => $app->make(PaymentManager::class)->driver());
@@ -127,6 +136,7 @@ class BillingServiceProvider extends ServiceProvider
         $router->aliasMiddleware('feature', CheckFeatureAccess::class);
         $router->aliasMiddleware('plan', CheckPlanAccess::class);
         $router->aliasMiddleware('usage', CheckUsageLimit::class);
+        $router->aliasMiddleware('billing.admin', EnsureBillingAdmin::class);
     }
 
     /**
@@ -161,6 +171,8 @@ class BillingServiceProvider extends ServiceProvider
         'promotion_codes',
         'coupon_redemptions',
         'payment_tokens',
+        'settings',
+        'payment_proofs',
     ];
 
     /**

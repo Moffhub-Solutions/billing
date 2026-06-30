@@ -69,6 +69,77 @@ class PaystackProviderTest extends BaseTestCase
         $this->assertFalse($result['success']);
     }
 
+    public function test_initialize_passes_subaccount_split_and_charge_through(): void
+    {
+        Http::fake([
+            '*/transaction/initialize' => Http::response([
+                'status' => true,
+                'data' => ['reference' => 'REF-002', 'access_code' => 'AC'],
+            ]),
+        ]);
+
+        $this->provider->charge(500000, 'NGN', [
+            'email' => 'customer@example.com',
+            'subaccount' => 'ACCT_abc123',
+            'bearer' => 'subaccount',
+            'transaction_charge' => 2000,
+        ]);
+
+        Http::assertSent(function ($request): bool {
+            $body = $request->data();
+
+            return $request->url() === 'https://api.paystack.co/transaction/initialize'
+                && ($body['subaccount'] ?? null) === 'ACCT_abc123'
+                && ($body['bearer'] ?? null) === 'subaccount'
+                && ($body['transaction_charge'] ?? null) === 2000;
+        });
+    }
+
+    public function test_initialize_passes_dynamic_split_object_and_saved_split_code(): void
+    {
+        Http::fake([
+            '*/transaction/initialize' => Http::response([
+                'status' => true,
+                'data' => ['reference' => 'REF-003', 'access_code' => 'AC'],
+            ]),
+        ]);
+
+        $split = ['type' => 'percentage', 'subaccounts' => [['subaccount' => 'ACCT_x', 'share' => 30]]];
+
+        $this->provider->charge(500000, 'NGN', [
+            'email' => 'customer@example.com',
+            'split_code' => 'SPL_xyz',
+            'split' => $split,
+        ]);
+
+        Http::assertSent(function ($request) use ($split): bool {
+            $body = $request->data();
+
+            return ($body['split_code'] ?? null) === 'SPL_xyz'
+                && ($body['split'] ?? null) === $split;
+        });
+    }
+
+    public function test_initialize_omits_split_keys_when_not_supplied(): void
+    {
+        Http::fake([
+            '*/transaction/initialize' => Http::response([
+                'status' => true,
+                'data' => ['reference' => 'REF-004', 'access_code' => 'AC'],
+            ]),
+        ]);
+
+        $this->provider->charge(500000, 'NGN', ['email' => 'customer@example.com']);
+
+        Http::assertSent(function ($request): bool {
+            $body = $request->data();
+
+            return ! array_key_exists('subaccount', $body)
+                && ! array_key_exists('split', $body)
+                && ! array_key_exists('split_code', $body);
+        });
+    }
+
     public function test_charge_with_authorization_code(): void
     {
         Http::fake([

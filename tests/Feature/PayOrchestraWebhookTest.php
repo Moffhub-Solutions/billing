@@ -6,10 +6,12 @@ namespace Moffhub\Billing\Tests\Feature;
 
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Events\PaymentReceived;
+use Moffhub\Billing\Jobs\ConfirmWebhookPayment;
 use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\Tests\BaseTestCase;
 use Moffhub\Billing\Tests\Fixtures\Models\Company;
@@ -71,10 +73,14 @@ class PayOrchestraWebhookTest extends BaseTestCase
         );
     }
 
-    public function test_webhook_rejects_invalid_signature(): void
+    public function test_webhook_rejects_invalid_signature_when_confirmation_disabled(): void
     {
+        // With async re-query confirmation turned off, an unverified callback
+        // (here, a bad signature) is rejected outright and settles nothing.
+        config(['billing.webhooks.confirm_unverified' => false]);
+
         $company = Company::create(['name' => 'Backbone Co']);
-        $this->createPendingPayment($company, 'pi_456');
+        $payment = $this->createPendingPayment($company, 'pi_456');
 
         $body = [
             'event' => 'payment_intent.completed',
@@ -84,6 +90,28 @@ class PayOrchestraWebhookTest extends BaseTestCase
         $this->postJson('/billing/webhooks/payorchestra', $body, [
             'X-PayOrchestra-Signature' => 'invalid',
         ])->assertStatus(403);
+
+        $this->assertSame(PaymentStatus::PENDING, $payment->refresh()->status);
+    }
+
+    public function test_unverified_webhook_enqueues_async_requery_confirmation(): void
+    {
+        // Default: an unverified callback for a known pending payment is
+        // acknowledged (202) and a re-query confirm job is queued, rather than
+        // trusting the payload.
+        Queue::fake();
+
+        $company = Company::create(['name' => 'Backbone Co']);
+        $this->createPendingPayment($company, 'pi_789');
+
+        $this->postJson('/billing/webhooks/payorchestra', [
+            'event' => 'payment_intent.completed',
+            'data' => ['id' => 'pi_789', 'status' => 'completed', 'amount' => 1000, 'currency' => 'KES'],
+        ], [
+            'X-PayOrchestra-Signature' => 'invalid',
+        ])->assertStatus(202);
+
+        Queue::assertPushed(ConfirmWebhookPayment::class, fn (ConfirmWebhookPayment $job): bool => $job->providerPaymentId === 'pi_789' && $job->provider === 'payorchestra');
     }
 
     public function test_webhook_processing_is_idempotent(): void
@@ -160,6 +188,58 @@ class PayOrchestraWebhookTest extends BaseTestCase
             ],
             $payload,
         );
+    }
+
+    public function test_ip_allowlist_rejects_callbacks_from_other_ips(): void
+    {
+        config(['billing.webhooks.providers.payorchestra.ip_allowlist' => ['10.10.10.10']]);
+
+        $company = Company::create(['name' => 'Backbone Co']);
+        $payment = $this->createPendingPayment($company, 'pi_ip');
+
+        // Test requests originate from 127.0.0.1, which is not allowlisted.
+        $this->postJson('/billing/webhooks/payorchestra', [
+            'event' => 'payment_intent.completed',
+            'data' => ['id' => 'pi_ip', 'status' => 'completed'],
+        ])->assertStatus(403);
+
+        $this->assertSame(PaymentStatus::PENDING, $payment->refresh()->status);
+    }
+
+    public function test_configured_secret_verifies_unsigned_callback_and_settles(): void
+    {
+        Event::fake([PaymentReceived::class]);
+        config(['billing.webhooks.providers.payorchestra.secret' => 'url-secret-xyz']);
+
+        $company = Company::create(['name' => 'Backbone Co']);
+        $payment = $this->createPendingPayment($company, 'pi_secret');
+
+        // No valid signature, but the configured shared secret on the URL
+        // authenticates the request, so it settles inline.
+        $this->postJson('/billing/webhooks/payorchestra?secret=url-secret-xyz', [
+            'event' => 'payment_intent.completed',
+            'data' => ['id' => 'pi_secret', 'status' => 'completed', 'amount' => 10000, 'currency' => 'KES'],
+        ])->assertOk()->assertJsonPath('status', 'received');
+
+        $this->assertSame(PaymentStatus::COMPLETED, $payment->refresh()->status);
+    }
+
+    public function test_wrong_secret_does_not_verify(): void
+    {
+        config([
+            'billing.webhooks.providers.payorchestra.secret' => 'url-secret-xyz',
+            'billing.webhooks.confirm_unverified' => false,
+        ]);
+
+        $company = Company::create(['name' => 'Backbone Co']);
+        $payment = $this->createPendingPayment($company, 'pi_bad');
+
+        $this->postJson('/billing/webhooks/payorchestra?secret=wrong', [
+            'event' => 'payment_intent.completed',
+            'data' => ['id' => 'pi_bad', 'status' => 'completed'],
+        ])->assertStatus(403);
+
+        $this->assertSame(PaymentStatus::PENDING, $payment->refresh()->status);
     }
 
     protected function createPendingPayment(Company $company, string $providerPaymentId): Payment

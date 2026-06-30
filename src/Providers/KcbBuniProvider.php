@@ -139,18 +139,22 @@ class KcbBuniProvider extends BasePaymentProvider
         // KCB IPN supports signature verification via public key (SHA-1)
         // but many deployments rely on URL obscurity + IP whitelisting.
         // Verify the payload has a recognizable IPN structure.
-        $defaultSig = (string) $request->header('signature', '');
-        $signature = (string) $request->header('X-KCB-Signature', $defaultSig);
-
-        if ($signature !== '' && $this->apiSecret !== '') {
+        // When a signing secret is configured, a valid HMAC is mandatory:
+        // never fall back to a structure check (an attacker controls headers and
+        // would simply omit the signature to reach the unauthenticated path).
+        if ($this->apiSecret !== '') {
+            $defaultSig = (string) $request->header('signature', '');
+            $signature = (string) $request->header('X-KCB-Signature', $defaultSig);
             $payload = $request->getContent();
             $expected = hash_hmac('sha256', $payload, $this->apiSecret);
 
-            return hash_equals($expected, $signature);
+            return $signature !== '' && hash_equals($expected, $signature);
         }
 
-        // Fall back to structure verification for unsigned IPNs
-        return $this->isV2IpnPayload($request) || $this->isV1IpnPayload($request);
+        // No secret configured: this provider cannot authenticate the payload
+        // itself. Authentication must come from the webhook URL secret / IP
+        // allowlist enforced by WebhookController.
+        return false;
     }
 
     #[\Override]

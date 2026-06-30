@@ -170,6 +170,38 @@ class InvoiceModelTest extends BaseTestCase
         $this->assertEquals(60000, $invoice->outstandingBalance());
     }
 
+    public function test_payment_in_a_different_currency_does_not_settle_the_invoice(): void
+    {
+        $invoice = Invoice::create([
+            'ulid' => Str::ulid()->toBase32(),
+            'billable_type' => $this->company->getMorphClass(),
+            'billable_id' => $this->company->id,
+            'number' => 'INV-CUR',
+            'status' => 'sent',
+            'subtotal' => 100000,
+            'total' => 100000,
+            'currency' => 'KES',
+        ]);
+
+        // A completed payment in USD against a KES invoice must not count:
+        // different currencies are not fungible.
+        Payment::create([
+            'ulid' => Str::ulid()->toBase32(),
+            'billable_type' => $this->company->getMorphClass(),
+            'billable_id' => $this->company->id,
+            'invoice_id' => $invoice->id,
+            'amount' => 100000,
+            'currency' => 'USD',
+            'status' => 'completed',
+        ]);
+
+        $this->assertSame(0, $invoice->amountPaid());
+        $this->assertSame(100000, $invoice->outstandingBalance());
+
+        $invoice->recalculateStatus();
+        $this->assertNotSame(InvoiceStatus::PAID, $invoice->fresh()?->status);
+    }
+
     public function test_formatted_total(): void
     {
         $invoice = Invoice::create([

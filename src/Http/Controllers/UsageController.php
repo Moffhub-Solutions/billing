@@ -95,7 +95,7 @@ class UsageController extends BillingController
         // Check usage limit
         $remaining = $billable->remainingQuota($featureSlug);
 
-        if ($remaining !== null && $remaining <= 0 && ! config('billing.usage.allow_overage', false)) {
+        if ($remaining !== null && $remaining <= 0 && ! billing_setting('usage.allow_overage', false, $billable)) {
             return response()->json([
                 'message' => "Usage limit reached for '{$featureSlug}'.",
                 'usage' => [

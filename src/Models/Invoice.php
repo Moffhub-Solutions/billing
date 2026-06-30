@@ -126,20 +126,21 @@ class Invoice extends Model
      */
     public function outstandingBalance(): int
     {
-        $paid = (int) $this->payments()
-            ->where('status', 'completed')
-            ->sum('amount');
-
-        return max(0, $this->total - $paid);
+        return max(0, $this->total - $this->amountPaid());
     }
 
     /**
      * Total of completed payments against this invoice (in cents).
+     *
+     * Only payments in the invoice's own currency count: amounts in different
+     * currencies are not fungible, so a payment in another currency must never
+     * settle (or partially settle) this invoice.
      */
     public function amountPaid(): int
     {
         return (int) $this->payments()
             ->where('status', 'completed')
+            ->where('currency', $this->currency)
             ->sum('amount');
     }
 

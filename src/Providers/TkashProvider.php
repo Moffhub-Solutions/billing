@@ -202,13 +202,11 @@ class TkashProvider extends BasePaymentProvider
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        // T-Kash C2B confirmation/validation callbacks are delivered to the URLs
-        // registered via registerUrls(); authenticity is enforced by URL secrecy
-        // and infrastructure-level IP allow-listing. Validate the payload shape.
-        $transaction = $this->extractTransaction($request);
-
-        return $transaction !== []
-            && (isset($transaction['transactionId']) || isset($transaction['referenceId']) || isset($transaction['trxId']));
+        // T-Kash C2B callbacks are not signed (authenticity is URL secrecy + IP
+        // allow-listing), so the payload is not self-authenticating. Report
+        // "unverified": WebhookController confirms via async re-query (and the
+        // optional URL secret / IP allowlist) before settling.
+        return false;
     }
 
     #[\Override]

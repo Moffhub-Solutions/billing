@@ -226,7 +226,9 @@ class AirtelMoneyProviderTest extends BaseTestCase
             ],
         ]);
 
-        $this->assertTrue($this->provider->verifyWebhook($request));
+        // Airtel does not sign callbacks: the payload alone is never "verified".
+        // Authenticity is established by the controller's async re-query.
+        $this->assertFalse($this->provider->verifyWebhook($request));
     }
 
     public function test_verify_webhook_invalid(): void

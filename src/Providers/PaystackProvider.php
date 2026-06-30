@@ -170,10 +170,14 @@ class PaystackProvider extends BasePaymentProvider
             'metadata' => $this->optionArray($options, 'metadata') ?: null,
         ];
 
-        $this->logRequest('POST', $this->baseUrl.'/transaction/initialize', $payload);
+        // Merge after array_filter so a dynamic split array (and a zero
+        // transaction_charge) is not dropped by the truthiness filter.
+        $body = array_merge(array_filter($payload), $this->splitOptions($options));
+
+        $this->logRequest('POST', $this->baseUrl.'/transaction/initialize', $body);
 
         $response = Http::withToken($this->secretKey)
-            ->post($this->baseUrl.'/transaction/initialize', array_filter($payload));
+            ->post($this->baseUrl.'/transaction/initialize', $body);
 
         $data = $this->asArray($response->json());
         $statusFlag = $data['status'] ?? false;
@@ -209,10 +213,12 @@ class PaystackProvider extends BasePaymentProvider
             'reference' => $this->optionNullableString($options, 'reference'),
         ];
 
-        $this->logRequest('POST', $this->baseUrl.'/transaction/charge_authorization', $payload);
+        $body = array_merge(array_filter($payload), $this->splitOptions($options));
+
+        $this->logRequest('POST', $this->baseUrl.'/transaction/charge_authorization', $body);
 
         $response = Http::withToken($this->secretKey)
-            ->post($this->baseUrl.'/transaction/charge_authorization', array_filter($payload));
+            ->post($this->baseUrl.'/transaction/charge_authorization', $body);
 
         $data = $this->asArray($response->json());
         $statusFlag = $data['status'] ?? false;
@@ -228,5 +234,50 @@ class PaystackProvider extends BasePaymentProvider
             'status' => $success ? 'completed' : 'failed',
             'metadata' => $metadataData,
         ];
+    }
+
+    /**
+     * Paystack split-payment / subaccount routing parameters, read from the
+     * charge options. Supports a saved split (`split_code`), a one-off dynamic
+     * `split` object, or a single `subaccount` plus optional `bearer` and flat
+     * `transaction_charge` (in kobo/cents). Only the keys actually supplied are
+     * returned, so the rest of the payload is untouched.
+     *
+     * SECURITY: these route a share of the payment to another account, so the
+     * values must be supplied by trusted server-side code, never forwarded from
+     * an untrusted payer. The HTTP charge endpoint strips them from client input
+     * (see PaymentController::SERVER_ONLY_OPTION_KEYS).
+     *
+     * @param  array<string, mixed>  $options
+     * @return array<string, mixed>
+     */
+    protected function splitOptions(array $options): array
+    {
+        $split = [];
+
+        if (($subaccount = $this->optionNullableString($options, 'subaccount')) !== null) {
+            $split['subaccount'] = $subaccount;
+        }
+
+        if (($splitCode = $this->optionNullableString($options, 'split_code')) !== null) {
+            $split['split_code'] = $splitCode;
+        }
+
+        $bearer = $this->optionNullableString($options, 'bearer');
+        if ($bearer === 'account' || $bearer === 'subaccount') {
+            $split['bearer'] = $bearer;
+        }
+
+        // Only meaningful alongside a subaccount; 0 is a valid "no flat charge".
+        if (isset($split['subaccount']) && is_numeric($options['transaction_charge'] ?? null)) {
+            $split['transaction_charge'] = (int) $options['transaction_charge'];
+        }
+
+        $dynamic = $this->optionArray($options, 'split');
+        if ($dynamic !== []) {
+            $split['split'] = $dynamic;
+        }
+
+        return $split;
     }
 }

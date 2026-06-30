@@ -141,19 +141,20 @@ class NcbaProvider extends BasePaymentProvider
     public function verifyWebhook(Request $request): bool
     {
         // NCBA IPN Push - verify via signature if available, else structure check
-        $signature = (string) $request->header('X-NCBA-Signature', '');
-
-        if ($signature !== '' && $this->apiSecret !== '') {
-            $payload = $request->getContent();
-            $expected = hash_hmac('sha256', $payload, $this->apiSecret);
-
-            return hash_equals($expected, $signature);
+        // Require a valid HMAC whenever a signing secret is configured; never
+        // fall back to a structure-only check (an attacker controls headers and
+        // would simply omit the signature to reach the unauthenticated path).
+        // With no secret, this provider cannot authenticate the callback, so it
+        // reports "unverified" and WebhookController confirms via async re-query.
+        if ($this->apiSecret === '') {
+            return false;
         }
 
-        // Fall back to structure verification
-        return $request->has('transaction_id')
-            || $request->has('transactionId')
-            || $request->has('reference');
+        $signature = (string) $request->header('X-NCBA-Signature', '');
+        $payload = $request->getContent();
+        $expected = hash_hmac('sha256', $payload, $this->apiSecret);
+
+        return $signature !== '' && hash_equals($expected, $signature);
     }
 
     #[\Override]

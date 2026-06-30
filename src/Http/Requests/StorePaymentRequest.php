@@ -24,7 +24,7 @@ class StorePaymentRequest extends FormRequest
 
         // The default provider is always permitted (the controller allows it for
         // server-initiated charges), so a curated list never blocks it here.
-        $defaultProvider = config('billing.default_provider');
+        $defaultProvider = billing_setting('default_provider');
         if (is_string($defaultProvider) && $defaultProvider !== '' && ! in_array($defaultProvider, $allowedProviders, true)) {
             $allowedProviders[] = $defaultProvider;
         }

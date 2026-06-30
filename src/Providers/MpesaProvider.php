@@ -122,12 +122,12 @@ class MpesaProvider extends BasePaymentProvider
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        // M-Pesa callbacks don't have signature verification.
-        // Security is via callback URL obscurity + IP whitelisting at infrastructure level.
-        // Verify the payload structure is valid.
-        $body = $request->input('Body.stkCallback') ?? $request->input('Result');
-
-        return $body !== null;
+        // Safaricom does not sign Daraja STK/result callbacks, so the payload is
+        // not self-authenticating. Report "unverified": WebhookController confirms
+        // the real outcome via an async STK status re-query (and optional URL
+        // secret / IP allowlist) before settling, so a forged callback settles
+        // nothing.
+        return false;
     }
 
     #[\Override]

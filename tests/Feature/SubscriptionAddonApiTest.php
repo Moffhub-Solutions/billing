@@ -80,7 +80,7 @@ class SubscriptionAddonApiTest extends BaseTestCase
             'enabled_at' => now(),
         ]);
 
-        $response = $this->getJson("/api/billing/subscriptions/{$this->subscription->id}/addons");
+        $response = $this->actingAs($this->user)->getJson("/api/billing/subscriptions/{$this->subscription->id}/addons");
 
         $response->assertOk()
             ->assertJsonCount(1, 'data')
@@ -90,7 +90,7 @@ class SubscriptionAddonApiTest extends BaseTestCase
 
     public function test_list_addons_empty(): void
     {
-        $response = $this->getJson("/api/billing/subscriptions/{$this->subscription->id}/addons");
+        $response = $this->actingAs($this->user)->getJson("/api/billing/subscriptions/{$this->subscription->id}/addons");
 
         $response->assertOk()
             ->assertJsonCount(0, 'data');
@@ -100,7 +100,7 @@ class SubscriptionAddonApiTest extends BaseTestCase
 
     public function test_enable_addon(): void
     {
-        $response = $this->postJson("/api/billing/subscriptions/{$this->subscription->id}/addons", [
+        $response = $this->actingAs($this->user)->postJson("/api/billing/subscriptions/{$this->subscription->id}/addons", [
             'feature' => 'ocr_scanning',
         ]);
 
@@ -118,7 +118,7 @@ class SubscriptionAddonApiTest extends BaseTestCase
 
     public function test_enable_addon_feature_not_available_as_addon(): void
     {
-        $response = $this->postJson("/api/billing/subscriptions/{$this->subscription->id}/addons", [
+        $response = $this->actingAs($this->user)->postJson("/api/billing/subscriptions/{$this->subscription->id}/addons", [
             'feature' => 'gatebook', // Not an addon feature
         ]);
 
@@ -134,7 +134,7 @@ class SubscriptionAddonApiTest extends BaseTestCase
             'enabled_at' => now(),
         ]);
 
-        $response = $this->postJson("/api/billing/subscriptions/{$this->subscription->id}/addons", [
+        $response = $this->actingAs($this->user)->postJson("/api/billing/subscriptions/{$this->subscription->id}/addons", [
             'feature' => 'ocr_scanning',
         ]);
 
@@ -142,26 +142,48 @@ class SubscriptionAddonApiTest extends BaseTestCase
             ->assertJsonPath('message', "Add-on 'OCR' is already active on this subscription.");
     }
 
-    public function test_enable_addon_with_price_override(): void
+    public function test_enable_addon_ignores_client_supplied_price_override(): void
     {
-        $response = $this->postJson("/api/billing/subscriptions/{$this->subscription->id}/addons", [
+        // A tenant must not be able to set their own add-on price. A
+        // price_override in the request is ignored; the add-on falls back to the
+        // feature's addon_price (a custom price is a back-office action).
+        $response = $this->actingAs($this->user)->postJson("/api/billing/subscriptions/{$this->subscription->id}/addons", [
             'feature' => 'ocr_scanning',
-            'price_override' => 3500,
+            'price_override' => 0,
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('data.price_override', 3500);
+            ->assertJsonPath('data.price_override', null);
 
         $this->assertDatabaseHas('billing_subscription_addons', [
             'subscription_id' => $this->subscription->id,
             'feature_id' => $this->ocrFeature->id,
-            'price_override' => 3500,
+            'price_override' => null,
         ]);
+    }
+
+    public function test_addon_endpoints_deny_cross_tenant_access(): void
+    {
+        // A subscription owned by another company must be invisible.
+        $otherCompany = Company::create(['name' => 'Other Co']);
+        $otherUser = User::create([
+            'name' => 'Other User',
+            'email' => 'other-addon@example.com',
+            'company_id' => $otherCompany->id,
+        ]);
+
+        $this->actingAs($otherUser)
+            ->getJson("/api/billing/subscriptions/{$this->subscription->id}/addons")
+            ->assertNotFound();
+
+        $this->actingAs($otherUser)
+            ->postJson("/api/billing/subscriptions/{$this->subscription->id}/addons", ['feature' => 'ocr_scanning'])
+            ->assertNotFound();
     }
 
     public function test_enable_addon_validation_requires_feature(): void
     {
-        $response = $this->postJson("/api/billing/subscriptions/{$this->subscription->id}/addons", []);
+        $response = $this->actingAs($this->user)->postJson("/api/billing/subscriptions/{$this->subscription->id}/addons", []);
 
         $response->assertUnprocessable()
             ->assertJsonValidationErrors(['feature']);
@@ -177,7 +199,7 @@ class SubscriptionAddonApiTest extends BaseTestCase
             'enabled_at' => now(),
         ]);
 
-        $response = $this->deleteJson("/api/billing/subscriptions/{$this->subscription->id}/addons/{$addon->id}");
+        $response = $this->actingAs($this->user)->deleteJson("/api/billing/subscriptions/{$this->subscription->id}/addons/{$addon->id}");
 
         $response->assertOk()
             ->assertJsonPath('message', 'Add-on removed.');
@@ -193,7 +215,7 @@ class SubscriptionAddonApiTest extends BaseTestCase
 
     public function test_disable_addon_not_found(): void
     {
-        $response = $this->deleteJson("/api/billing/subscriptions/{$this->subscription->id}/addons/99999");
+        $response = $this->actingAs($this->user)->deleteJson("/api/billing/subscriptions/{$this->subscription->id}/addons/99999");
 
         $response->assertNotFound();
     }

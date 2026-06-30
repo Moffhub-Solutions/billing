@@ -156,11 +156,11 @@ class CoopBankProvider extends BasePaymentProvider
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        // Co-op Bank callbacks are verified by checking the payload structure
-        // and the presence of expected fields
-        return $request->has('MessageReference')
-            || $request->has('TransactionReference')
-            || $request->has('message_reference');
+        // Co-op Connect callbacks are not signed (security is IP-allowlist +
+        // URL secrecy per Co-op's docs), so the payload is not self-authenticating.
+        // Report "unverified": WebhookController confirms via the Transaction
+        // Status Enquiry re-query before settling.
+        return false;
     }
 
     #[\Override]

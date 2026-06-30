@@ -109,17 +109,19 @@ class IntaSendProvider extends BasePaymentProvider
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        $signature = (string) $request->header('X-IntaSend-Signature', '');
-
-        if ($signature !== '' && $this->secretKey !== '') {
-            $payload = $request->getContent();
-            $expected = hash_hmac('sha256', $payload, $this->secretKey);
-
-            return hash_equals($expected, $signature);
+        // IntaSend webhooks carry a configurable "challenge" value, not an HMAC.
+        // When a challenge is configured (as the provider's secretKey here) it
+        // must match exactly; otherwise the callback is reported "unverified" and
+        // WebhookController confirms via the IntaSend status API (re-query). The
+        // structure-only fallback is removed so a forged body can't self-certify.
+        if ($this->secretKey === '') {
+            return false;
         }
 
-        // Fall back to structure verification
-        return $request->has('invoice_id') || $request->has('tracking_id');
+        $challengeRaw = $request->input('challenge');
+        $challenge = is_string($challengeRaw) ? $challengeRaw : '';
+
+        return $challenge !== '' && hash_equals($this->secretKey, $challenge);
     }
 
     #[\Override]

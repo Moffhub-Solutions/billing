@@ -39,7 +39,7 @@ class CheckUsageLimit
             return $next($request);
         }
 
-        if ($remaining <= 0 && ! config('billing.usage.allow_overage', false)) {
+        if ($remaining <= 0 && ! billing_setting('usage.allow_overage', false, $billable)) {
             throw UsageLimitExceededException::limitReached(
                 $featureSlug,
                 $billable->usage($featureSlug),

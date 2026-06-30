@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Http\Controllers;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Moffhub\Billing\Contracts\BillableInterface;
 use Moffhub\Billing\Enums\InvoiceStatus;
 use Moffhub\Billing\Events\PaymentReceived;
 use Moffhub\Billing\Http\Requests\StoreInvoiceRequest;
@@ -57,14 +60,14 @@ class InvoiceController extends BillingController
             return response()->json(['message' => 'No billable entity found.'], 404);
         }
 
-        $currencyDefault = config('billing.currency', 'KES');
+        $currencyDefault = billing_setting('currency', 'KES', $billable);
         $currency = $request->input('currency', is_string($currencyDefault) ? $currencyDefault : 'KES');
 
-        $taxRateDefault = config('billing.tax.default_rate', 16.0);
+        $taxRateDefault = billing_setting('tax.default_rate', 16.0, $billable);
         $taxRateInput = $request->input('tax_rate', $taxRateDefault);
         $taxRate = is_numeric($taxRateInput) ? (float) $taxRateInput : 16.0;
 
-        $dueDaysRaw = config('billing.invoices.due_days', 30);
+        $dueDaysRaw = billing_setting('invoices.due_days', 30, $billable);
         $dueDays = is_numeric($dueDaysRaw) ? (int) $dueDaysRaw : 30;
         $dueDate = $request->input('due_date', now()->addDays($dueDays));
 
@@ -137,9 +140,15 @@ class InvoiceController extends BillingController
     /**
      * Show a single invoice with line items.
      */
-    public function show(int $invoice): JsonResponse
+    public function show(Request $request, int $invoice): JsonResponse
     {
-        $invoice = Invoice::query()->with('items', 'payments')->findOrFail($invoice);
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        $invoice = $this->ownedInvoices($billable)->with('items', 'payments')->findOrFail($invoice);
 
         return response()->json([
             'data' => new InvoiceResource($invoice),
@@ -149,9 +158,15 @@ class InvoiceController extends BillingController
     /**
      * Mark invoice as sent.
      */
-    public function send(int $invoice): JsonResponse
+    public function send(Request $request, int $invoice): JsonResponse
     {
-        $invoice = Invoice::query()->findOrFail($invoice);
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        $invoice = $this->ownedInvoices($billable)->findOrFail($invoice);
 
         if ($invoice->status !== InvoiceStatus::DRAFT) {
             return response()->json(['message' => 'Only draft invoices can be sent.'], 422);
@@ -168,9 +183,15 @@ class InvoiceController extends BillingController
     /**
      * Void an invoice.
      */
-    public function void(int $invoice): JsonResponse
+    public function void(Request $request, int $invoice): JsonResponse
     {
-        $invoice = Invoice::query()->findOrFail($invoice);
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        $invoice = $this->ownedInvoices($billable)->findOrFail($invoice);
 
         if ($invoice->status === InvoiceStatus::PAID) {
             return response()->json(['message' => 'Cannot void a paid invoice. Issue a credit note instead.'], 422);
@@ -194,7 +215,13 @@ class InvoiceController extends BillingController
             'notes' => ['sometimes', 'string', 'max:1000'],
         ]);
 
-        $invoice = Invoice::query()->findOrFail($invoice);
+        $billable = $this->resolveBillable($request);
+
+        if ($billable === null) {
+            return response()->json(['message' => 'No billable entity found.'], 404);
+        }
+
+        $invoice = $this->ownedInvoices($billable)->findOrFail($invoice);
 
         if ($invoice->isPaid()) {
             return response()->json(['message' => 'Invoice is already paid.'], 422);
@@ -250,11 +277,22 @@ class InvoiceController extends BillingController
     }
 
     /**
+     * @param  Model&BillableInterface  $billable
+     * @return Builder<Invoice>
+     */
+    private function ownedInvoices(Model $billable): Builder
+    {
+        return Invoice::query()
+            ->where('billable_type', $billable->getMorphClass())
+            ->where('billable_id', $billable->getKey());
+    }
+
+    /**
      * Generate a sequential invoice number.
      */
     protected function generateInvoiceNumber(): string
     {
-        $prefixRaw = config('billing.invoices.prefix', 'INV');
+        $prefixRaw = billing_setting('invoices.prefix', 'INV');
         $prefix = is_string($prefixRaw) ? $prefixRaw : 'INV';
         $year = now()->year;
         $paddingRaw = config('billing.invoices.sequence_padding', 4);

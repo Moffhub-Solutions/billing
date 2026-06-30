@@ -7,6 +7,7 @@ use Moffhub\Billing\Http\Controllers\CouponController;
 use Moffhub\Billing\Http\Controllers\FeatureController;
 use Moffhub\Billing\Http\Controllers\InvoiceController;
 use Moffhub\Billing\Http\Controllers\PaymentController;
+use Moffhub\Billing\Http\Controllers\PaymentProofController;
 use Moffhub\Billing\Http\Controllers\PaymentTokenController;
 use Moffhub\Billing\Http\Controllers\PlanController;
 use Moffhub\Billing\Http\Controllers\SubscriptionAddonController;
@@ -30,7 +31,7 @@ Route::prefix('plans')->group(function (): void {
 });
 
 // ─── Admin Plan Management ─────────────────────────────────────────────
-Route::prefix('admin/plans')->group(function (): void {
+Route::prefix('admin/plans')->middleware('billing.admin')->group(function (): void {
     Route::post('/', [PlanController::class, 'store'])->name('billing.plans.store');
     Route::put('/{plan}', [PlanController::class, 'update'])->name('billing.plans.update');
     Route::delete('/{plan}', [PlanController::class, 'destroy'])->name('billing.plans.destroy');
@@ -44,7 +45,7 @@ Route::prefix('features')->group(function (): void {
 });
 
 // ─── Admin Feature Management ──────────────────────────────────────────
-Route::prefix('admin/features')->group(function (): void {
+Route::prefix('admin/features')->middleware('billing.admin')->group(function (): void {
     Route::post('/', [FeatureController::class, 'store'])->name('billing.features.store');
     Route::put('/{feature}', [FeatureController::class, 'update'])->name('billing.features.update');
     Route::delete('/{feature}', [FeatureController::class, 'destroy'])->name('billing.features.destroy');
@@ -90,12 +91,20 @@ Route::prefix('coupons')->group(function (): void {
     Route::post('/redeem', [CouponController::class, 'redeem'])->name('billing.coupons.redeem');
 });
 
-Route::prefix('admin/coupons')->group(function (): void {
+Route::prefix('admin/coupons')->middleware('billing.admin')->group(function (): void {
     Route::get('/', [CouponController::class, 'index'])->name('billing.coupons.index');
     Route::post('/', [CouponController::class, 'store'])->name('billing.coupons.store');
     Route::get('/{coupon}', [CouponController::class, 'show'])->name('billing.coupons.show');
     Route::delete('/{coupon}', [CouponController::class, 'destroy'])->name('billing.coupons.destroy');
     Route::post('/{coupon}/promotion-codes', [CouponController::class, 'storePromotionCode'])->name('billing.coupons.promotion-codes.store');
+});
+
+// ─── Proof of Payment (back-office; distinct from cash) ────────────────
+Route::prefix('admin/payment-proofs')->middleware('billing.admin')->group(function (): void {
+    Route::get('/', [PaymentProofController::class, 'index'])->name('billing.payment-proofs.index');
+    Route::post('/', [PaymentProofController::class, 'store'])->name('billing.payment-proofs.store');
+    Route::post('/{proof}/verify', [PaymentProofController::class, 'verify'])->name('billing.payment-proofs.verify');
+    Route::post('/{proof}/reject', [PaymentProofController::class, 'reject'])->name('billing.payment-proofs.reject');
 });
 
 // ─── Payment Methods / Tokens ──────────────────────────────────────────
@@ -112,6 +121,8 @@ Route::prefix('invoices')->group(function (): void {
     Route::post('/', [InvoiceController::class, 'store'])->name('billing.invoices.store');
     Route::get('/{invoice}', [InvoiceController::class, 'show'])->name('billing.invoices.show');
     Route::post('/{invoice}/send', [InvoiceController::class, 'send'])->name('billing.invoices.send');
-    Route::post('/{invoice}/void', [InvoiceController::class, 'void'])->name('billing.invoices.void');
-    Route::post('/{invoice}/mark-paid', [InvoiceController::class, 'markPaid'])->name('billing.invoices.mark-paid');
+    // Privileged: voiding and marking-paid (which records a payment) are
+    // back-office actions, gated behind the billing admin check.
+    Route::post('/{invoice}/void', [InvoiceController::class, 'void'])->middleware('billing.admin')->name('billing.invoices.void');
+    Route::post('/{invoice}/mark-paid', [InvoiceController::class, 'markPaid'])->middleware('billing.admin')->name('billing.invoices.mark-paid');
 });

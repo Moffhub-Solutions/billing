@@ -16,6 +16,22 @@ use Moffhub\Billing\Services\SplitPaymentService;
 
 class PaymentController extends BillingController
 {
+    /**
+     * Charge option keys a payer may never supply: they route money to other
+     * accounts (Paystack subaccount/split) or charge a saved card by code.
+     * Stripped from client input on the public charge endpoint.
+     *
+     * @var list<string>
+     */
+    private const SERVER_ONLY_OPTION_KEYS = [
+        'subaccount',
+        'split',
+        'split_code',
+        'bearer',
+        'transaction_charge',
+        'authorization_code',
+    ];
+
     public function __construct(
         protected PaymentManager $paymentManager,
         protected SplitPaymentService $splitPayments,
@@ -73,7 +89,7 @@ class PaymentController extends BillingController
             return response()->json(['message' => 'No billable entity found.'], 404);
         }
 
-        $defaultProvider = config('billing.default_provider', 'manual');
+        $defaultProvider = billing_setting('default_provider', 'manual', $billable);
         $providerInput = $request->input('provider', is_string($defaultProvider) ? $defaultProvider : 'manual');
         $provider = is_string($providerInput) ? $providerInput : 'manual';
 
@@ -91,11 +107,18 @@ class PaymentController extends BillingController
             return response()->json(['message' => 'Invalid payment provider.'], 500);
         }
 
-        $currencyDefault = config('billing.currency', 'KES');
+        $currencyDefault = billing_setting('currency', 'KES', $billable);
         $currency = $request->string('currency', is_string($currencyDefault) ? $currencyDefault : 'KES')->toString();
 
         $optionsRaw = $request->input('options', []);
         $options = is_array($optionsRaw) ? $optionsRaw : [];
+
+        // The payer must not control money-routing or saved-card options: a
+        // Paystack subaccount/split would divert a share of their own payment to
+        // an attacker-controlled account while the invoice still settles, and an
+        // authorization_code would charge someone else's saved card. These are
+        // server-only; trusted callers set them by invoking the service directly.
+        $options = array_diff_key($options, array_flip(self::SERVER_ONLY_OPTION_KEYS));
 
         // Initiate the payment. Amounts above the provider's per-transaction
         // limit are split into a group of tranche payments automatically.
@@ -232,7 +255,7 @@ class PaymentController extends BillingController
             ], 422);
         }
 
-        $defaultProvider = config('billing.default_provider', 'manual');
+        $defaultProvider = billing_setting('default_provider', 'manual', $paymentModel->billable);
         $provider = $paymentModel->payment_provider ?? (is_string($defaultProvider) ? $defaultProvider : 'manual');
         $driver = $this->paymentManager->driver($provider);
 
@@ -240,20 +263,46 @@ class PaymentController extends BillingController
             return response()->json(['message' => 'Invalid payment provider.'], 500);
         }
 
+        // Cap the refund to the amount actually captured (minus any prior
+        // partial refunds). Without this, `amount` is only validated as >= 1 and
+        // a caller could ask the provider to refund far more than was paid.
+        $meta = $paymentModel->metadata ?? [];
+        $captured = (int) $paymentModel->amount;
+        $alreadyRefunded = is_numeric($meta['refunded_amount'] ?? null) ? (int) $meta['refunded_amount'] : 0;
+        $remaining = $captured - $alreadyRefunded;
+
         $amountRaw = $request->input('amount');
+        $refundAmount = is_numeric($amountRaw) ? (int) $amountRaw : $remaining;
+
+        if ($refundAmount < 1 || $refundAmount > $remaining) {
+            return response()->json([
+                'message' => 'Refund amount exceeds the remaining captured amount.',
+                'captured' => $captured,
+                'already_refunded' => $alreadyRefunded,
+                'remaining' => $remaining,
+            ], 422);
+        }
 
         $result = $driver->refund(
             $providerPaymentId,
-            is_numeric($amountRaw) ? (int) $amountRaw : null,
+            $refundAmount,
             ['reason' => $request->input('reason')],
         );
 
         if ($result['success']) {
+            $newRefunded = $alreadyRefunded + $refundAmount;
+            $fullyRefunded = $newRefunded >= $captured;
+
+            $history = $meta['refunds'] ?? [];
+
             $paymentModel->update([
-                'status' => 'refunded',
-                'refunded_at' => now(),
-                'metadata' => array_merge($paymentModel->metadata ?? [], [
-                    'refund' => $result,
+                // A partial refund keeps the payment COMPLETED (so the remainder
+                // can still be refunded); only a full refund flips to REFUNDED.
+                'status' => $fullyRefunded ? 'refunded' : $paymentModel->status,
+                'refunded_at' => $fullyRefunded ? now() : $paymentModel->refunded_at,
+                'metadata' => array_merge($meta, [
+                    'refunded_amount' => $newRefunded,
+                    'refunds' => array_merge(is_array($history) ? $history : [], [$result]),
                 ]),
             ]);
         }

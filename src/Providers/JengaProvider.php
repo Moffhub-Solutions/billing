@@ -180,35 +180,40 @@ class JengaProvider extends BasePaymentProvider
     #[\Override]
     public function verifyWebhook(Request $request): bool
     {
-        $signature = (string) $request->header('X-Jenga-Signature', '');
-
-        // If signature header is present and we have a key, verify cryptographically
-        if ($signature !== '' && $this->privateKeyPath !== null && file_exists($this->privateKeyPath)) {
-            $payload = $request->getContent();
-            $keyContent = file_get_contents($this->privateKeyPath);
-
-            if (! is_string($keyContent)) {
-                return false;
-            }
-
-            $publicKey = openssl_pkey_get_public($keyContent);
-
-            if ($publicKey === false) {
-                return false;
-            }
-
-            $decoded = base64_decode($signature, true);
-
-            if ($decoded === false) {
-                return false;
-            }
-
-            return openssl_verify($payload, $decoded, $publicKey, OPENSSL_ALGO_SHA256) === 1;
+        // Jenga's documented SHA-256/RSA signature is verified with the
+        // configured key. When a key is configured a valid signature is
+        // mandatory (no structure-only fallback an attacker could reach by
+        // omitting the header). With no key, the callback is reported
+        // "unverified" and WebhookController confirms via async re-query.
+        if ($this->privateKeyPath === null || ! file_exists($this->privateKeyPath)) {
+            return false;
         }
 
-        // Fall back to structure verification — check for expected Jenga payload fields
-        return $request->input('transactionId') !== null
-            || $request->input('transaction_id') !== null;
+        $signature = (string) $request->header('X-Jenga-Signature', '');
+
+        if ($signature === '') {
+            return false;
+        }
+
+        $keyContent = file_get_contents($this->privateKeyPath);
+
+        if (! is_string($keyContent)) {
+            return false;
+        }
+
+        $publicKey = openssl_pkey_get_public($keyContent);
+
+        if ($publicKey === false) {
+            return false;
+        }
+
+        $decoded = base64_decode($signature, true);
+
+        if ($decoded === false) {
+            return false;
+        }
+
+        return openssl_verify($request->getContent(), $decoded, $publicKey, OPENSSL_ALGO_SHA256) === 1;
     }
 
     #[\Override]

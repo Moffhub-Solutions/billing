@@ -31,7 +31,7 @@ class UssdController extends Controller
 
         Log::debug('USSD request received', [
             'session_id' => $sessionId,
-            'phone' => $phoneNumber,
+            'phone' => $this->maskPhone($phoneNumber),
             'service_code' => $serviceCode,
             'text' => $text,
         ]);
@@ -53,5 +53,19 @@ class UssdController extends Controller
             return response('END An error occurred. Please try again later.', 200)
                 ->header('Content-Type', 'text/plain');
         }
+    }
+
+    /**
+     * Mask a phone number for logging (PII): keep only the last 3 digits.
+     */
+    private function maskPhone(string $phone): string
+    {
+        if ($phone === '') {
+            return '';
+        }
+
+        $tail = substr($phone, -3);
+
+        return str_repeat('*', max(0, strlen($phone) - 3)).$tail;
     }
 }

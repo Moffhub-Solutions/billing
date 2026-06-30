@@ -178,7 +178,7 @@ class UssdMenuBuilder
             if (! $provider instanceof PaymentProviderInterface) {
                 throw new \RuntimeException('mpesa driver did not resolve to PaymentProviderInterface.');
             }
-            $currencyRaw = config('billing.currency', 'KES');
+            $currencyRaw = billing_setting('currency', 'KES', $billable);
             $currency = is_string($currencyRaw) ? $currencyRaw : 'KES';
 
             $result = $provider->charge($amountCents, $currency, [
@@ -479,7 +479,7 @@ class UssdMenuBuilder
      */
     public static function formatMoney(int $cents): string
     {
-        $currencyRaw = config('billing.currency', 'KES');
+        $currencyRaw = billing_setting('currency', 'KES');
         $currency = is_string($currencyRaw) ? $currencyRaw : 'KES';
 
         return $currency.' '.number_format($cents / 100, 2);

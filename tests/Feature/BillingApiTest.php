@@ -57,6 +57,10 @@ class BillingApiTest extends BaseTestCase
             'email' => 'api@example.com',
             'company_id' => $this->company->id,
         ]);
+
+        // Admin plan/feature management routes are gated; authenticate as admin.
+        $this->actingAs($this->user);
+        $this->grantBillingAdmin();
     }
 
     // ─── Plans API ─────────────────────────────────────────────────────
@@ -132,6 +136,24 @@ class BillingApiTest extends BaseTestCase
     }
 
     // ─── Admin Plans API ───────────────────────────────────────────────
+
+    public function test_admin_routes_reject_non_admin(): void
+    {
+        // Authenticated (from setUp) but not a billing admin: gate fails closed.
+        $this->config()->set('billing.admin_gate', null);
+        $this->config()->set('billing.admin_bypass_method', null);
+
+        $this->postJson('/api/billing/admin/plans', [
+            'name' => 'Sneaky',
+            'slug' => 'sneaky',
+            'base_price' => 0,
+            'billing_cycle' => 'monthly',
+            'features' => [],
+            'limits' => [],
+        ])->assertStatus(403);
+
+        $this->assertDatabaseMissing('billing_plans', ['slug' => 'sneaky']);
+    }
 
     public function test_create_plan(): void
     {

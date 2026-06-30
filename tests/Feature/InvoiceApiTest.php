@@ -29,6 +29,9 @@ class InvoiceApiTest extends BaseTestCase
             'email' => 'invoice@example.com',
             'company_id' => $this->company->id,
         ]);
+
+        // void / mark-paid are admin-gated back-office actions.
+        $this->grantBillingAdmin();
     }
 
     // ─── List Invoices ──────────────────────────────────────────────────

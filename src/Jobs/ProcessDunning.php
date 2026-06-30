@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Jobs;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
@@ -21,7 +23,7 @@ use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\Models\Subscription;
 use Moffhub\Billing\PaymentManager;
 
-class ProcessDunning implements ShouldQueue
+class ProcessDunning implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -39,8 +41,9 @@ class ProcessDunning implements ShouldQueue
 
     protected function processDunning(Subscription $subscription, PaymentManager $paymentManager): void
     {
-        $dunningSchedule = $this->dunningSchedule();
-        $gracePeriodRaw = config('billing.subscriptions.grace_period_days', 7);
+        $billable = $subscription->billable;
+        $dunningSchedule = $this->dunningSchedule($billable);
+        $gracePeriodRaw = billing_setting('subscriptions.grace_period_days', 7, $billable);
         $gracePeriodDays = is_numeric($gracePeriodRaw) ? (int) $gracePeriodRaw : 7;
 
         // Determine when the subscription became past_due by looking at the period end
@@ -82,8 +85,8 @@ class ProcessDunning implements ShouldQueue
 
         $plan = $subscription->plan;
         $provider = $subscription->payment_provider ?? $paymentManager->getDefaultDriver();
-        $currencyRaw = config('billing.currency', 'KES');
-        $currency = is_string($currencyRaw) ? $currencyRaw : 'KES';
+        // Charge in the plan's own currency, not a global setting.
+        $currency = $plan->currency !== '' ? $plan->currency : 'KES';
 
         try {
             $driver = $paymentManager->driver($provider);
@@ -218,9 +221,9 @@ class ProcessDunning implements ShouldQueue
     /**
      * @return array<int, int>
      */
-    private function dunningSchedule(): array
+    private function dunningSchedule(?Model $billable = null): array
     {
-        $raw = config('billing.subscriptions.dunning_schedule', [1, 3, 7]);
+        $raw = billing_setting('subscriptions.dunning_schedule', [1, 3, 7], $billable);
 
         if (! is_array($raw)) {
             return [1, 3, 7];
