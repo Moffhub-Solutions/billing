@@ -279,6 +279,36 @@ return [
             'initiator_name' => env('MPESA_INITIATOR_NAME'),
             'initiator_password' => env('MPESA_INITIATOR_PASSWORD'),
             'certificate_path' => env('MPESA_CERTIFICATE_PATH'), // path to Safaricom .cer file
+            /*
+            | M-Pesa Ratiba (standing orders). COMMERCIAL Safaricom API: needs a
+            | contract and go-live on your own paybill/till. Off by default; no
+            | Daraja calls are made while disabled. Verify field names and
+            | endpoints against Safaricom docs before go-live (see README).
+            */
+            'ratiba' => [
+                'enabled' => (bool) env('MPESA_RATIBA_ENABLED', false),
+                'callback_url' => env('MPESA_RATIBA_CALLBACK_URL'),
+                'transaction_type' => env('MPESA_RATIBA_TRANSACTION_TYPE', 'paybill'), // paybill|till
+                'default_frequency' => env('MPESA_RATIBA_DEFAULT_FREQUENCY', 'monthly'),
+                // Shared token the callback URL must carry (?secret=...). Required unless ip_allowlist is set.
+                'callback_secret' => env('MPESA_RATIBA_CALLBACK_SECRET'),
+                'ip_allowlist' => [], // IPs/CIDRs Safaricom posts from; a match is accepted without the secret
+                // Paths relative to the Daraja base URL. Cancel and status have no
+                // confirmed public path: leave null until Safaricom gives you one.
+                'endpoints' => [
+                    'create' => '/standingorder/v1/createStandingOrderExternal',
+                    'cancel' => env('MPESA_RATIBA_CANCEL_PATH'),
+                    'status' => env('MPESA_RATIBA_STATUS_PATH'),
+                ],
+                'transaction_types' => [
+                    'paybill' => 'Standing Order Customer Pay Bill',
+                    'till' => 'Standing Order Customer Pay Merchant',
+                ],
+                'receiver_party_identifier_types' => ['paybill' => '4', 'till' => '2'],
+                'pending_timeout_hours' => (int) env('MPESA_RATIBA_PENDING_TIMEOUT_HOURS', 24),
+                'missed_grace_days' => (int) env('MPESA_RATIBA_MISSED_GRACE_DAYS', 2),
+                'max_failures' => (int) env('MPESA_RATIBA_MAX_FAILURES', 3), // failed debits before the order is marked failed
+            ],
             'limits' => [
                 'max_amount' => (int) env('MPESA_MAX_AMOUNT', 25_000_000),     // 250,000 KES per STK Push
                 'max_per_day' => env('MPESA_MAX_PER_DAY') !== null ? (int) env('MPESA_MAX_PER_DAY') : null,
@@ -530,5 +560,7 @@ return [
         'payment_tokens' => 'billing_payment_tokens',
         'settings' => 'billing_settings',
         'payment_proofs' => 'billing_payment_proofs',
+        'standing_orders' => 'billing_standing_orders',
+        'standing_order_executions' => 'billing_standing_order_executions',
     ],
 ];

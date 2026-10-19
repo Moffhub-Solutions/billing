@@ -55,6 +55,7 @@ class PaymentManager extends Manager
             initiatorName: $this->configNullableString($prefix.'initiator_name'),
             initiatorPassword: $this->configNullableString($prefix.'initiator_password'),
             certificatePath: $this->configNullableString($prefix.'certificate_path'),
+            ratiba: $this->configArray($prefix.'ratiba'),
         );
     }
 
@@ -496,6 +497,16 @@ class PaymentManager extends Manager
         $value = $this->config()->get($key);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function configArray(string $key): array
+    {
+        $value = $this->config()->get($key, []);
+
+        return is_array($value) ? $value : [];
     }
 
     private function configInt(string $key, int $default = 0): int

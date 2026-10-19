@@ -7,9 +7,13 @@ namespace Moffhub\Billing\Providers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Moffhub\Billing\Contracts\SupportsStandingOrders;
+use Moffhub\Billing\Providers\Concerns\MpesaRatiba;
 
-class MpesaProvider extends BasePaymentProvider
+class MpesaProvider extends BasePaymentProvider implements SupportsStandingOrders
 {
+    use MpesaRatiba;
+
     protected string $consumerKey;
 
     protected string $consumerSecret;
@@ -32,6 +36,12 @@ class MpesaProvider extends BasePaymentProvider
 
     protected ?string $certificatePath;
 
+    /** @var array<string, mixed> */
+    protected array $ratibaConfig;
+
+    /**
+     * @param  array<string, mixed>  $ratiba  M-Pesa Ratiba settings (billing.providers.mpesa.ratiba)
+     */
     public function __construct(
         string $consumerKey,
         string $consumerSecret,
@@ -44,6 +54,7 @@ class MpesaProvider extends BasePaymentProvider
         ?string $initiatorName = null,
         ?string $initiatorPassword = null,
         ?string $certificatePath = null,
+        array $ratiba = [],
     ) {
         $this->consumerKey = $consumerKey;
         $this->consumerSecret = $consumerSecret;
@@ -56,6 +67,7 @@ class MpesaProvider extends BasePaymentProvider
         $this->initiatorName = $initiatorName;
         $this->initiatorPassword = $initiatorPassword;
         $this->certificatePath = $certificatePath;
+        $this->ratibaConfig = $ratiba;
     }
 
     // ─── PaymentProviderInterface ──────────────────────────────────────

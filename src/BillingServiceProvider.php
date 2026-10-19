@@ -16,6 +16,7 @@ use Illuminate\Support\ServiceProvider;
 use Moffhub\Billing\Contracts\FeatureResolverInterface;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Contracts\TaxCalculatorInterface;
+use Moffhub\Billing\Http\Controllers\StandingOrderWebhookController;
 use Moffhub\Billing\Http\Controllers\UssdController;
 use Moffhub\Billing\Http\Controllers\WebhookController;
 use Moffhub\Billing\Http\Middleware\CheckFeatureAccess;
@@ -30,6 +31,7 @@ use Moffhub\Billing\Services\CouponService;
 use Moffhub\Billing\Services\FeatureResolver;
 use Moffhub\Billing\Services\InvoiceService;
 use Moffhub\Billing\Services\KenyanTaxCalculator;
+use Moffhub\Billing\Services\StandingOrderService;
 use Moffhub\Billing\Services\UsageService;
 use Moffhub\Billing\Services\UssdMenuBuilder;
 use Moffhub\Billing\Services\UssdSessionManager;
@@ -82,6 +84,7 @@ class BillingServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(InvoiceService::class);
+        $this->app->singleton(StandingOrderService::class);
 
         $this->app->singleton(UssdSessionManager::class);
 
@@ -111,6 +114,7 @@ class BillingServiceProvider extends ServiceProvider
                 Console\Commands\MpesaSetupCommand::class,
                 Console\Commands\ReconcileWithPayOrchestraCommand::class,
                 Console\Commands\PayOrchestraSmokeTestCommand::class,
+                Console\Commands\ReconcileStandingOrdersCommand::class,
             ]);
         }
 
@@ -173,6 +177,8 @@ class BillingServiceProvider extends ServiceProvider
         'payment_tokens',
         'settings',
         'payment_proofs',
+        'standing_orders',
+        'standing_order_executions',
     ];
 
     /**
@@ -301,6 +307,7 @@ class BillingServiceProvider extends ServiceProvider
             ])
             ->group(function (): void {
                 Route::post('/mpesa', [WebhookController::class, 'mpesa'])->name('billing.webhooks.mpesa');
+                Route::post('/mpesa/ratiba', [StandingOrderWebhookController::class, 'mpesa'])->name('billing.webhooks.mpesa.ratiba');
                 Route::post('/paystack', [WebhookController::class, 'paystack'])->name('billing.webhooks.paystack');
                 Route::post('/flutterwave', [WebhookController::class, 'flutterwave'])->name('billing.webhooks.flutterwave');
                 Route::post('/pesapal', [WebhookController::class, 'pesapal'])->name('billing.webhooks.pesapal');

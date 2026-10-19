@@ -361,6 +361,69 @@ class MyProvider extends BasePaymentProvider
 
 ---
 
+## M-Pesa Ratiba (standing orders)
+
+M-Pesa Ratiba is Safaricom's Daraja standing order API. Your system asks Safaricom to create a standing order on the customer's M-Pesa profile, the customer approves it once on their phone, and Safaricom then debits them on the schedule into your paybill or till. Frequencies: one-off, daily, weekly, monthly, bi-monthly, quarterly, half-yearly, yearly (`StandingOrderFrequency`).
+
+> **Verify against Safaricom docs before go-live.** The create endpoint (`/standingorder/v1/createStandingOrderExternal`) and its request fields (`StandingOrderName`, `StartDate`, `EndDate` as `YYYYMMDD`, `BusinessShortCode`, `TransactionType`, `ReceiverPartyIdentifierType` 4=paybill 2=till, `Amount`, `PartyA`, `CallBackURL`, `AccountReference` max 12, `TransactionDesc` max 13, `Frequency` 1-8) follow the public Daraja documentation. These are NOT confirmed publicly and are configurable or parsed permissively: the cancel and status endpoints (null by default), the `TransactionType` strings, the exact callback payload, and how individual debits are reported (the package accepts a Ratiba result body or a paybill C2B confirmation matched on `BillRefNumber` = the order's account reference). Test every path in the sandbox with your own Daraja app first.
+
+### Prerequisites
+
+- Your own paybill or till, with a signed Safaricom contract. Ratiba is a commercial API that Safaricom enables per shortcode after a go-live request (apisupport@safaricom.co.ke).
+- A Daraja app with the M-Pesa Ratiba product for sandbox testing.
+- The same `MPESA_*` credentials the STK Push driver uses.
+
+### Configuration
+
+```env
+MPESA_RATIBA_ENABLED=true                 # default false; no Daraja call is made while false
+MPESA_RATIBA_CALLBACK_URL=https://app.example.com/billing/webhooks/mpesa/ratiba?secret=CHANGE_ME
+MPESA_RATIBA_CALLBACK_SECRET=CHANGE_ME    # must match the ?secret= on the URL (or X-Webhook-Secret)
+MPESA_RATIBA_TRANSACTION_TYPE=paybill     # paybill|till
+MPESA_RATIBA_DEFAULT_FREQUENCY=monthly
+# Only when Safaricom gives you the paths:
+MPESA_RATIBA_CANCEL_PATH=
+MPESA_RATIBA_STATUS_PATH=
+```
+
+Run `php artisan migrate` (adds `billing_standing_orders` and `billing_standing_order_executions`). Webhook URL: `POST {billing.webhooks.prefix}/mpesa/ratiba`. Safaricom does not sign callbacks, so the route refuses everything unless the shared secret matches or the caller IP is in `billing.providers.mpesa.ratiba.ip_allowlist`. Schedule the sweep: `$schedule->command('billing:reconcile-standing-orders')->hourly();`
+
+### Usage
+
+```php
+use Moffhub\Billing\Services\StandingOrderService;
+
+$orders = app(StandingOrderService::class);
+
+// 1. After the customer ticks the consent box (store the proof):
+$order = $orders->createForSubscription($subscription, '0712345678', [
+    'consent' => true,
+    'consent_ip' => $request->ip(),
+    'consent_user_agent' => $request->userAgent(),
+]);
+// $order->status is 'pending' until the customer approves on their phone.
+
+// 2. Price change: cancel + recreate (the customer approves the new order again).
+$new = $orders->changeAmount($order, 750_000);
+
+// 3. Cancel.
+$orders->cancel($order, 'user_request');
+```
+
+Listen for `StandingOrderActivated`, `StandingOrderExecuted`, `StandingOrderFailed`, `StandingOrderCancelled`. Each successful debit (deduplicated on the provider transaction id) records a `Payment`, extends the subscription period, and fires `PaymentReceived` and `SubscriptionRenewed`. A failed or missed debit increments `failure_count`, fires `PaymentFailed` and `StandingOrderFailed`, and after `ratiba.max_failures` the order is marked `failed`. To add a flat fee to the fixed amount call `StandingOrderService::resolveAmountUsing(fn (Subscription $s, StandingOrderFrequency $f): int => ...)`. Metered usage cannot ride on a standing order: invoice it separately.
+
+### Consent text
+
+Show this (or your lawyer's version) next to the approval checkbox and keep the stored `consent_at`, IP and user agent: "I authorise {Business} to set up an M-Pesa standing order on my number {phone} for KES {amount} {frequency} until I cancel. I will approve it on my phone and can cancel it at any time from my M-Pesa menu."
+
+### Limitations
+
+- The amount is fixed; a price change needs `changeAmount()` and a fresh customer approval. Until the old order is cancelled at Safaricom the customer may hold both: where no cancel endpoint is configured the old order is flagged `provider_cancel_pending` in its metadata and must be cancelled by the customer or via Safaricom.
+- The customer can cancel or lose funds at any time; cancellation by the customer is only noticed through a callback or `billing:reconcile-standing-orders`.
+- Failed debits (insufficient funds) are reported, not retried by the package.
+
+---
+
 ## Events
 
 Every state change fires a Laravel event so you can integrate with your SMS, email, analytics, or approval workflows.
