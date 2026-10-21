@@ -1,3 +1,10 @@
+# v0.1.2 (Oct 21, 2026)
+* add `PaystackSplitApi` (bound as a singleton): list banks, create/update/fetch subaccounts, create/update/fetch splits, add/update/remove split shares; failures throw `PaystackException` with Paystack's message
+* add a default split for Paystack charges: `billing.providers.paystack.split_code` (+ `split_currency`) or `PaystackProvider::resolveDefaultSplitUsing()`; charges carrying their own split options are untouched
+* add M-Pesa Ratiba standing orders: `SupportsStandingOrders` contract implemented by `MpesaProvider`, `StandingOrderFrequency`/`StandingOrderStatus` enums, `StandingOrder` and `StandingOrderExecution` models, `StandingOrderService`, `POST {webhooks.prefix}/mpesa/ratiba` callback route, `billing:reconcile-standing-orders` command and `StandingOrder*` events
+* add `billing_standing_orders` and `billing_standing_order_executions` tables; run `php artisan migrate`
+* off by default (`MPESA_RATIBA_ENABLED`); cancel/status endpoints must be configured once Safaricom provides them
+
 # v0.1.0 (Jun 30, 2026)
 * add runtime settings: per-tenant/global config overrides backed by `billing_settings`, no redeploy
 * add proof of payment: record off-platform payment evidence for any channel, verify-to-settle, with events any maker-checker can hook
