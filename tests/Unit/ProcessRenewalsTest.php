@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Tests\Unit;
 
+use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Event;
-use Mockery;
 use Moffhub\Billing\Enums\BillingCycle;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Enums\SubscriptionStatus;
@@ -402,31 +402,65 @@ class ProcessRenewalsTest extends BaseTestCase
 
     protected function mockSuccessfulPayment(): void
     {
-        $mockProvider = Mockery::mock(ManualProvider::class, ['charge' => [
+        $this->fakeChargeResult([
             'success' => true,
             'provider_payment_id' => 'test_pay_'.uniqid(),
             'provider_reference' => null,
             'status' => 'completed',
             'metadata' => [],
-        ]])->makePartial();
-
-        $mockManager = Mockery::mock(PaymentManager::class, ['driver' => $mockProvider, 'getDefaultDriver' => 'manual'])->makePartial();
-
-        $this->app()->instance(PaymentManager::class, $mockManager);
+        ]);
     }
 
     protected function mockFailedPayment(): void
     {
-        $mockProvider = Mockery::mock(ManualProvider::class, ['charge' => [
+        $this->fakeChargeResult([
             'success' => false,
             'provider_payment_id' => null,
             'provider_reference' => null,
             'status' => 'failed',
             'metadata' => ['error' => 'Insufficient funds'],
-        ]])->makePartial();
+        ]);
+    }
 
-        $mockManager = Mockery::mock(PaymentManager::class, ['driver' => $mockProvider, 'getDefaultDriver' => 'manual'])->makePartial();
+    /**
+     * @param  array{success: bool, provider_payment_id: string|null, provider_reference: string|null, status: string, metadata: array<string, mixed>}  $result
+     */
+    private function fakeChargeResult(array $result): void
+    {
+        $provider = new class($result) extends ManualProvider
+        {
+            /**
+             * @param  array{success: bool, provider_payment_id: string|null, provider_reference: string|null, status: string, metadata: array<string, mixed>}  $result
+             */
+            public function __construct(private array $result) {}
 
-        $this->app()->instance(PaymentManager::class, $mockManager);
+            #[\Override]
+            public function charge(int $amount, string $currency, array $options = []): array
+            {
+                return $this->result;
+            }
+        };
+
+        $manager = new class($this->app(), $provider) extends PaymentManager
+        {
+            public function __construct(Application $app, private ManualProvider $provider)
+            {
+                parent::__construct($app);
+            }
+
+            #[\Override]
+            public function driver($driver = null)
+            {
+                return $this->provider;
+            }
+
+            #[\Override]
+            public function getDefaultDriver(): string
+            {
+                return 'manual';
+            }
+        };
+
+        $this->app()->instance(PaymentManager::class, $manager);
     }
 }
