@@ -9,6 +9,23 @@ use Illuminate\Support\Facades\Http;
 
 class PaystackProvider extends BasePaymentProvider
 {
+    /**
+     * Resolves split options for a charge that supplies none. Receives the
+     * charge currency and returns split options (e.g. ['split_code' => ...]) or
+     * null. Lets an app keep its split in its own storage.
+     *
+     * @var (\Closure(string): (array<string, mixed>|null))|null
+     */
+    protected static ?\Closure $defaultSplitResolver = null;
+
+    /**
+     * @param  (\Closure(string): (array<string, mixed>|null))|null  $resolver
+     */
+    public static function resolveDefaultSplitUsing(?\Closure $resolver): void
+    {
+        static::$defaultSplitResolver = $resolver;
+    }
+
     public function __construct(
         protected string $secretKey,
         protected string $publicKey = '',
@@ -172,7 +189,7 @@ class PaystackProvider extends BasePaymentProvider
 
         // Merge after array_filter so a dynamic split array (and a zero
         // transaction_charge) is not dropped by the truthiness filter.
-        $body = array_merge(array_filter($payload), $this->splitOptions($options));
+        $body = array_merge(array_filter($payload), $this->splitOptions($options, $currency));
 
         $this->logRequest('POST', $this->baseUrl.'/transaction/initialize', $body);
 
@@ -213,7 +230,7 @@ class PaystackProvider extends BasePaymentProvider
             'reference' => $this->optionNullableString($options, 'reference'),
         ];
 
-        $body = array_merge(array_filter($payload), $this->splitOptions($options));
+        $body = array_merge(array_filter($payload), $this->splitOptions($options, $currency));
 
         $this->logRequest('POST', $this->baseUrl.'/transaction/charge_authorization', $body);
 
@@ -248,10 +265,13 @@ class PaystackProvider extends BasePaymentProvider
      * an untrusted payer. The HTTP charge endpoint strips them from client input
      * (see PaymentController::SERVER_ONLY_OPTION_KEYS).
      *
+     * When the charge supplies none of these, the app's default split applies
+     * (resolveDefaultSplitUsing, else `split_code` config) for a matching currency.
+     *
      * @param  array<string, mixed>  $options
      * @return array<string, mixed>
      */
-    protected function splitOptions(array $options): array
+    protected function splitOptions(array $options, ?string $currency = null): array
     {
         $split = [];
 
@@ -278,6 +298,33 @@ class PaystackProvider extends BasePaymentProvider
             $split['split'] = $dynamic;
         }
 
+        if ($split === [] && $currency !== null) {
+            return $this->defaultSplit($currency);
+        }
+
         return $split;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function defaultSplit(string $currency): array
+    {
+        if (static::$defaultSplitResolver !== null) {
+            return (static::$defaultSplitResolver)($currency) ?? [];
+        }
+
+        $code = config('billing.providers.paystack.split_code');
+        $splitCurrency = config('billing.providers.paystack.split_currency');
+
+        if (! is_string($code) || $code === '') {
+            return [];
+        }
+
+        if (is_string($splitCurrency) && $splitCurrency !== '' && strcasecmp($splitCurrency, $currency) !== 0) {
+            return [];
+        }
+
+        return ['split_code' => $code];
     }
 }

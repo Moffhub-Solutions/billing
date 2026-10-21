@@ -320,6 +320,11 @@ return [
             'public_key' => env('PAYSTACK_PUBLIC_KEY'),
             'webhook_secret' => env('PAYSTACK_WEBHOOK_SECRET'),
             'base_url' => env('PAYSTACK_BASE_URL', 'https://api.paystack.co'),
+            // Saved Transaction Split applied to every charge that does not
+            // carry its own split options. Only used when the charge currency
+            // equals split_currency (a split is single-currency).
+            'split_code' => env('PAYSTACK_SPLIT_CODE'),
+            'split_currency' => env('PAYSTACK_SPLIT_CURRENCY'),
         ],
 
         'flutterwave' => [

@@ -31,6 +31,7 @@ use Moffhub\Billing\Services\CouponService;
 use Moffhub\Billing\Services\FeatureResolver;
 use Moffhub\Billing\Services\InvoiceService;
 use Moffhub\Billing\Services\KenyanTaxCalculator;
+use Moffhub\Billing\Services\PaystackSplitApi;
 use Moffhub\Billing\Services\StandingOrderService;
 use Moffhub\Billing\Services\UsageService;
 use Moffhub\Billing\Services\UssdMenuBuilder;
@@ -54,6 +55,16 @@ class BillingServiceProvider extends ServiceProvider
         $this->app->singleton(CouponService::class);
 
         $this->app->singleton(FieldEncryptor::class);
+
+        $this->app->singleton(PaystackSplitApi::class, function (): PaystackSplitApi {
+            $secret = config('billing.providers.paystack.secret_key');
+            $base = config('billing.providers.paystack.base_url');
+
+            return new PaystackSplitApi(
+                is_string($secret) ? $secret : '',
+                is_string($base) && $base !== '' ? $base : 'https://api.paystack.co',
+            );
+        });
 
         $this->app->singleton(BillingService::class, fn ($app): BillingService => new BillingService(
             $app->make(FeatureResolver::class),
