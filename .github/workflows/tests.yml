@@ -4,6 +4,7 @@ on:
 jobs:
   tests:
     runs-on: [self-hosted, Linux, X64]
+    container: php:${{ matrix.php }}-cli
     strategy:
       fail-fast: true
       matrix:
@@ -14,12 +15,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: ${{ matrix.php }}
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, gd
-          coverage: none
+      - name: Install PHP extensions and Composer
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq git unzip > /dev/null
+          curl -sSLf -o /usr/local/bin/install-php-extensions https://github.com/mlocati/docker-php-extension-installer/releases/download/2.9.26/install-php-extensions
+          chmod +x /usr/local/bin/install-php-extensions
+          install-php-extensions @composer zip pcntl gd
 
       - name: Get Composer Cache Directory
         id: composer-cache

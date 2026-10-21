@@ -40,6 +40,11 @@ class SplitPaymentTest extends BaseTestCase
         $this->setConfig('billing.providers.manual.limits', ['max_amount' => 25_000_000]);
     }
 
+    protected function usedToday(): int
+    {
+        return $this->service()->usedToday($this->company, 'manual');
+    }
+
     protected function service(): SplitPaymentService
     {
         return app(SplitPaymentService::class);
@@ -122,8 +127,6 @@ class SplitPaymentTest extends BaseTestCase
             'payment_provider' => 'manual',
         ]);
 
-        $usedToday = fn (): int => $this->service()->usedToday($this->company, 'manual');
-        $this->assertSame(1, $usedToday());
         // Failed payments don't count.
         $this->company->payments()->create([
             'ulid' => Str::ulid()->toBase32(),
@@ -132,7 +135,7 @@ class SplitPaymentTest extends BaseTestCase
             'status' => PaymentStatus::FAILED,
             'payment_provider' => 'manual',
         ]);
-        $this->assertSame(1, $usedToday());
+        $this->assertSame(1, $this->usedToday());
     }
 
     public function test_uninitiated_pending_tranche_does_not_count_toward_daily_cap(): void
