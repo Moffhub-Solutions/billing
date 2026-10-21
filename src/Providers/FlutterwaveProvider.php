@@ -56,7 +56,7 @@ class FlutterwaveProvider extends BasePaymentProvider
             'success' => $success,
             'provider_refund_id' => $this->jsonNullableString($response, 'data.id'),
             'status' => $success ? 'completed' : 'failed',
-            'metadata' => $metadata,
+            'metadata' => $this->stringKeyed($metadata),
         ];
     }
 

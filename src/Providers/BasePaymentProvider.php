@@ -217,6 +217,23 @@ abstract class BasePaymentProvider implements PaymentProviderInterface
     }
 
     /**
+     * Keep only string-keyed entries so the result satisfies array<string, mixed>.
+     *
+     * @param  array<array-key, mixed>  $value
+     * @return array<string, mixed>
+     */
+    protected function stringKeyed(array $value): array
+    {
+        $result = [];
+
+        foreach ($value as $key => $item) {
+            $result[(string) $key] = $item;
+        }
+
+        return $result;
+    }
+
+    /**
      * Read a string value at a dot path on a JSON response.
      */
     protected function jsonString(Response $response, string $path, string $default = ''): string

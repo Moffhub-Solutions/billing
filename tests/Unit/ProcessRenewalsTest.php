@@ -6,7 +6,6 @@ namespace Moffhub\Billing\Tests\Unit;
 
 use Illuminate\Support\Facades\Event;
 use Mockery;
-use Mockery\ExpectationInterface;
 use Moffhub\Billing\Enums\BillingCycle;
 use Moffhub\Billing\Enums\PaymentStatus;
 use Moffhub\Billing\Enums\SubscriptionStatus;
@@ -403,54 +402,30 @@ class ProcessRenewalsTest extends BaseTestCase
 
     protected function mockSuccessfulPayment(): void
     {
-        $mockProvider = Mockery::mock(ManualProvider::class)->makePartial();
-        $chargeExp = $mockProvider->shouldReceive('charge');
-        if ($chargeExp instanceof ExpectationInterface) {
-            $chargeExp->andReturn([
+        $mockProvider = Mockery::mock(ManualProvider::class, ['charge' => [
                 'success' => true,
                 'provider_payment_id' => 'test_pay_'.uniqid(),
                 'provider_reference' => null,
                 'status' => 'completed',
                 'metadata' => [],
-            ]);
-        }
+            ]])->makePartial();
 
-        $mockManager = Mockery::mock(PaymentManager::class)->makePartial();
-        $driverExp = $mockManager->shouldReceive('driver');
-        if ($driverExp instanceof ExpectationInterface) {
-            $driverExp->andReturn($mockProvider);
-        }
-        $defaultExp = $mockManager->shouldReceive('getDefaultDriver');
-        if ($defaultExp instanceof ExpectationInterface) {
-            $defaultExp->andReturn('manual');
-        }
+        $mockManager = Mockery::mock(PaymentManager::class, ['driver' => $mockProvider, 'getDefaultDriver' => 'manual'])->makePartial();
 
         $this->app()->instance(PaymentManager::class, $mockManager);
     }
 
     protected function mockFailedPayment(): void
     {
-        $mockProvider = Mockery::mock(ManualProvider::class)->makePartial();
-        $chargeExp = $mockProvider->shouldReceive('charge');
-        if ($chargeExp instanceof ExpectationInterface) {
-            $chargeExp->andReturn([
+        $mockProvider = Mockery::mock(ManualProvider::class, ['charge' => [
                 'success' => false,
                 'provider_payment_id' => null,
                 'provider_reference' => null,
                 'status' => 'failed',
                 'metadata' => ['error' => 'Insufficient funds'],
-            ]);
-        }
+            ]])->makePartial();
 
-        $mockManager = Mockery::mock(PaymentManager::class)->makePartial();
-        $driverExp = $mockManager->shouldReceive('driver');
-        if ($driverExp instanceof ExpectationInterface) {
-            $driverExp->andReturn($mockProvider);
-        }
-        $defaultExp = $mockManager->shouldReceive('getDefaultDriver');
-        if ($defaultExp instanceof ExpectationInterface) {
-            $defaultExp->andReturn('manual');
-        }
+        $mockManager = Mockery::mock(PaymentManager::class, ['driver' => $mockProvider, 'getDefaultDriver' => 'manual'])->makePartial();
 
         $this->app()->instance(PaymentManager::class, $mockManager);
     }

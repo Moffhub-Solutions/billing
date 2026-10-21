@@ -88,7 +88,7 @@ class PaystackProvider extends BasePaymentProvider
             'success' => $success,
             'provider_refund_id' => $this->jsonNullableString($response, 'data.transaction.id'),
             'status' => $success ? 'pending' : 'failed',
-            'metadata' => $metadataData,
+            'metadata' => $this->stringKeyed($metadataData),
         ];
     }
 
@@ -249,7 +249,7 @@ class PaystackProvider extends BasePaymentProvider
             'provider_payment_id' => $this->jsonNullableString($response, 'data.reference'),
             'provider_reference' => $this->jsonNullableString($response, 'data.id'),
             'status' => $success ? 'completed' : 'failed',
-            'metadata' => $metadataData,
+            'metadata' => $this->stringKeyed($metadataData),
         ];
     }
 
