@@ -403,12 +403,12 @@ class ProcessRenewalsTest extends BaseTestCase
     protected function mockSuccessfulPayment(): void
     {
         $mockProvider = Mockery::mock(ManualProvider::class, ['charge' => [
-                'success' => true,
-                'provider_payment_id' => 'test_pay_'.uniqid(),
-                'provider_reference' => null,
-                'status' => 'completed',
-                'metadata' => [],
-            ]])->makePartial();
+            'success' => true,
+            'provider_payment_id' => 'test_pay_'.uniqid(),
+            'provider_reference' => null,
+            'status' => 'completed',
+            'metadata' => [],
+        ]])->makePartial();
 
         $mockManager = Mockery::mock(PaymentManager::class, ['driver' => $mockProvider, 'getDefaultDriver' => 'manual'])->makePartial();
 
@@ -418,12 +418,12 @@ class ProcessRenewalsTest extends BaseTestCase
     protected function mockFailedPayment(): void
     {
         $mockProvider = Mockery::mock(ManualProvider::class, ['charge' => [
-                'success' => false,
-                'provider_payment_id' => null,
-                'provider_reference' => null,
-                'status' => 'failed',
-                'metadata' => ['error' => 'Insufficient funds'],
-            ]])->makePartial();
+            'success' => false,
+            'provider_payment_id' => null,
+            'provider_reference' => null,
+            'status' => 'failed',
+            'metadata' => ['error' => 'Insufficient funds'],
+        ]])->makePartial();
 
         $mockManager = Mockery::mock(PaymentManager::class, ['driver' => $mockProvider, 'getDefaultDriver' => 'manual'])->makePartial();
 
