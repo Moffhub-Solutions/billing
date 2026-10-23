@@ -85,6 +85,112 @@ class PayOrchestraProviderTest extends BaseTestCase
             && $request->hasHeader('X-Organization-Id', 'org_test'));
     }
 
+    public function test_charge_sends_the_saved_card_authorization(): void
+    {
+        Http::fake([
+            'https://backbone.test/api/v1/client/payment-intents' => Http::response([
+                'data' => ['id' => 'pi_9', 'reference_code' => 'PO-9', 'status' => 'created'],
+            ], 201),
+        ]);
+
+        $this->provider->charge(25000, 'KES', [
+            'channel' => 'card',
+            'email' => 'payer@example.com',
+            'authorization_ref' => 'AUTH_abc123',
+        ]);
+
+        Http::assertSent(fn ($request) => $request['authorization_ref'] === 'AUTH_abc123'
+            && $request['payer_email'] === 'payer@example.com');
+    }
+
+    public function test_charge_omits_the_authorization_when_not_given(): void
+    {
+        Http::fake([
+            'https://backbone.test/api/v1/client/payment-intents' => Http::response([
+                'data' => ['id' => 'pi_9', 'reference_code' => 'PO-9', 'status' => 'created'],
+            ], 201),
+        ]);
+
+        $this->provider->charge(25000, 'KES', ['channel' => 'card']);
+
+        Http::assertSent(fn ($request) => ! isset($request['authorization_ref']));
+    }
+
+    public function test_parse_webhook_surfaces_the_reusable_authorization(): void
+    {
+        $request = Request::create('/webhook', 'POST', [
+            'event' => 'payment_intent.completed',
+            'data' => [
+                'id' => 'pi_9',
+                'reference_code' => 'PO-9',
+                'status' => 'completed',
+                'amount' => 25000,
+                'currency' => 'KES',
+                'metadata' => [
+                    'reusable_authorization' => ['authorization_code' => 'AUTH_abc123', 'last4' => '4081'],
+                ],
+            ],
+        ]);
+
+        $parsed = $this->provider->parseWebhook($request);
+
+        $saved = $parsed['metadata']['reusable_authorization'] ?? null;
+        $this->assertIsArray($saved);
+        $this->assertSame('AUTH_abc123', $saved['authorization_code']);
+    }
+
+    public function test_a_card_charge_waits_for_and_returns_the_checkout_page(): void
+    {
+        Http::fake([
+            'https://backbone.test/api/v1/client/payment-intents' => Http::response([
+                'data' => [
+                    'id' => 'pi_c1',
+                    'reference_code' => 'PO-C1',
+                    'status' => 'processing',
+                    'checkout_url' => 'https://checkout.paystack.com/abc',
+                ],
+            ], 201),
+        ]);
+
+        $result = $this->provider->charge(25000, 'KES', [
+            'channel' => 'card',
+            'email' => 'owner@example.com',
+            'redirect_url' => 'https://app.test/billing/return',
+        ]);
+
+        Http::assertSent(fn ($request) => $request['wait_for_checkout'] === true
+            && $request['redirect_url'] === 'https://app.test/billing/return');
+        $this->assertTrue($result['success']);
+        $this->assertSame('https://checkout.paystack.com/abc', $result['metadata']['authorization_url']);
+    }
+
+    public function test_a_mobile_money_charge_does_not_wait_for_a_checkout_page(): void
+    {
+        Http::fake([
+            'https://backbone.test/api/v1/client/payment-intents' => Http::response([
+                'data' => ['id' => 'pi_m1', 'reference_code' => 'PO-M1', 'status' => 'created'],
+            ], 201),
+        ]);
+
+        $this->provider->charge(25000, 'KES', ['channel' => 'stk_push', 'phone' => '254712345678']);
+
+        Http::assertSent(fn ($request) => ! isset($request['wait_for_checkout']));
+    }
+
+    public function test_a_payment_the_backbone_failed_outright_is_not_a_success(): void
+    {
+        Http::fake([
+            'https://backbone.test/api/v1/client/payment-intents' => Http::response([
+                'data' => ['id' => 'pi_f1', 'reference_code' => 'PO-F1', 'status' => 'failed', 'failure_reason' => 'no_connector_available'],
+            ], 201),
+        ]);
+
+        $result = $this->provider->charge(25000, 'KES', ['channel' => 'card', 'email' => 'a@b.co']);
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('failed', $result['status']);
+    }
+
     public function test_charge_handles_failure_response(): void
     {
         Http::fake([
@@ -256,6 +362,24 @@ class PayOrchestraProviderTest extends BaseTestCase
         $this->assertTrue($result['success']);
         $this->assertEquals('sess_abc', $result['session_id']);
         $this->assertEquals('https://pay.test/sessions/abc', $result['session_url']);
+    }
+
+    public function test_create_hosted_session_forwards_the_callback_url(): void
+    {
+        Http::fake([
+            'https://backbone.test/api/v1/client/hosted-payments/sessions' => Http::response([
+                'data' => ['id' => 's_1', 'payment_url' => 'https://backbone.test/pay/x', 'expires_at' => '2026-10-24T00:00:00Z'],
+            ], 201),
+        ]);
+
+        $this->provider->createHostedSession(25000, 'KES', [
+            'reference' => 'INV-1',
+            'payer_email' => 'a@b.co',
+            'callback_url' => 'https://product.test/webhooks/payorchestra',
+        ]);
+
+        Http::assertSent(fn ($request) => $request['callback_url'] === 'https://product.test/webhooks/payorchestra'
+            && $request['reference'] === 'INV-1');
     }
 
     public function test_create_hosted_session_failure(): void

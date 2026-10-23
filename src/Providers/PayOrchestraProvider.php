@@ -46,7 +46,10 @@ class PayOrchestraProvider extends BasePaymentProvider
      *   - reference: string — your bill/invoice reference
      *   - metadata: array — arbitrary data echoed back in webhooks
      *   - callback_url: string — override default webhook URL
-     *   - redirect_url: string — for hosted payment page redirect
+     *   - redirect_url: string - for hosted payment page redirect
+     *   - authorization_ref: string - a reusable card authorization from an earlier
+     *     payment (webhook metadata.reusable_authorization.authorization_code); charges
+     *     that card without the payer present. Needs `email`, the one it was saved under.
      */
     #[\Override]
     public function charge(int $amount, string $currency, array $options = []): array
@@ -67,6 +70,10 @@ class PayOrchestraProvider extends BasePaymentProvider
             'payer_phone' => $this->optionNullableString($options, 'phone'),
             'payer_email' => $this->optionNullableString($options, 'email'),
             'redirect_url' => $this->optionNullableString($options, 'redirect_url'),
+            'authorization_ref' => $this->optionNullableString($options, 'authorization_ref'),
+            // A card payer is redirected straight away, so the backbone must
+            // have the provider's checkout page ready in this response.
+            'wait_for_checkout' => $this->redirectsPayer($options) ? true : null,
         ], fn ($v) => $v !== null && $v !== '');
 
         $response = $this->client()->post('/api/v1/client/payment-intents', $payload);
@@ -85,14 +92,35 @@ class PayOrchestraProvider extends BasePaymentProvider
             ];
         }
 
+        $status = $this->mapStatus($this->jsonString($response, 'data.status', 'pending'));
+        $checkoutUrl = $this->jsonNullableString($response, 'data.checkout_url');
+
+        // The backbone refused it outright (no connector, declined saved card).
+        // Callers branch on `success`, so a dead payment must not read as one.
+        if ($status === 'failed') {
+            return [
+                'success' => false,
+                'provider_payment_id' => $this->jsonNullableString($response, 'data.id'),
+                'provider_reference' => $this->jsonNullableString($response, 'data.reference_code'),
+                'status' => 'failed',
+                'metadata' => [
+                    'error' => $this->jsonString($response, 'data.failure_reason', 'PayOrchestra could not take the payment'),
+                    'message' => $this->jsonString($response, 'data.failure_reason', 'PayOrchestra could not take the payment'),
+                ],
+            ];
+        }
+
         return [
             'success' => true,
             'provider_payment_id' => $this->jsonNullableString($response, 'data.id'),
             'provider_reference' => $this->jsonNullableString($response, 'data.reference_code'),
-            'status' => $this->mapStatus($this->jsonString($response, 'data.status', 'pending')),
+            'status' => $status,
             'metadata' => [
                 'channel' => $this->jsonNullableString($response, 'data.channel'),
-                'checkout_url' => $this->jsonNullableString($response, 'data.checkout_url'),
+                'checkout_url' => $checkoutUrl,
+                // The key every redirecting caller already reads from the other
+                // drivers, so switching driver needs no change at the call site.
+                'authorization_url' => $checkoutUrl,
                 'hosted_payment_url' => $this->jsonNullableString($response, 'data.hosted_payment_url'),
             ],
         ];
@@ -230,7 +258,10 @@ class PayOrchestraProvider extends BasePaymentProvider
             'success_url' => $this->optionNullableString($options, 'success_url'),
             'cancel_url' => $this->optionNullableString($options, 'cancel_url'),
             'metadata' => $this->optionArray($options, 'metadata'),
-        ], fn ($v) => $v !== null);
+            // Without this the backbone has nowhere to report the result, and
+            // the product never learns a hosted payment finished.
+            'callback_url' => $this->optionString($options, 'callback_url', $this->defaultCallbackUrl() ?? ''),
+        ], fn ($v) => $v !== null && $v !== '');
 
         $response = $this->client()->post('/api/v1/client/hosted-payments/sessions', $payload);
 
@@ -308,6 +339,25 @@ class PayOrchestraProvider extends BasePaymentProvider
         $response = $this->client()->get('/api/v1/client/settlements', $filters);
 
         return $response->successful() ? $this->jsonArray($response, 'data') : [];
+    }
+
+    /**
+     * Whether the payer is about to be sent to a provider page.
+     *
+     * Card, or no channel and no phone to prompt (so card is the only thing
+     * left). Mobile-money prompts happen on the handset and need no URL.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    protected function redirectsPayer(array $options): bool
+    {
+        $channel = $this->optionNullableString($options, 'channel');
+
+        if ($channel !== null) {
+            return $channel === 'card';
+        }
+
+        return $this->optionNullableString($options, 'phone') === null;
     }
 
     protected function client(): PendingRequest

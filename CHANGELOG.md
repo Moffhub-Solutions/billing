@@ -1,3 +1,8 @@
+# v0.1.3 (Oct 23, 2026)
+* PayOrchestra driver: card charges ask the backbone to wait for the provider's checkout page and return it as `metadata.authorization_url` (and `checkout_url`), so callers that redirect on that key work unchanged; `redirect_url` becomes the provider's return page; a payment the backbone fails outright now returns `success => false`
+* PayOrchestra driver: `createHostedSession` now sends `callback_url` (option, or the package webhook route), so the product is told when a hosted payment finishes
+* PayOrchestra driver: accept an `authorization_ref` charge option to bill a saved card without the payer present (Paystack, via the backbone); the reusable authorization comes back in the completed webhook as `metadata.reusable_authorization`
+
 # v0.1.2 (Oct 21, 2026)
 * add `PaystackSplitApi` (bound as a singleton): list banks, create/update/fetch subaccounts, create/update/fetch splits, add/update/remove split shares; failures throw `PaystackException` with Paystack's message
 * add a default split for Paystack charges: `billing.providers.paystack.split_code` (+ `split_currency`) or `PaystackProvider::resolveDefaultSplitUsing()`; charges carrying their own split options are untouched
