@@ -304,7 +304,7 @@ Each integration's official documentation, the webhook/callback authentication i
 
 | Provider | Official docs | Webhook auth | Status re-query |
 |----------|---------------|--------------|-----------------|
-| PayOrchestra | (backbone) | HMAC-SHA256, `X-PayOrchestra-Signature` | provider status API |
+| PayOrchestra | (backbone) | HMAC-SHA256 of `{timestamp}.{body}`, `X-PayOrchestra-Signature` and `X-PayOrchestra-Timestamp` | provider status API |
 | M-Pesa (Daraja) | [developer.safaricom.co.ke](https://developer.safaricom.co.ke/) | None (unsigned) — URL secret + [IP allowlist](https://developer.safaricom.co.ke/) | STK Query `POST /mpesa/stkpushquery/v1/query` |
 | Airtel Money | [developers.airtel.africa](https://developers.airtel.africa/documentation/collection-apis/2.0) | Optional body `hash` (HMAC, if enabled) | `GET /standard/v1/payments/{id}` |
 | T-Kash | [telkom.co.ke/t-kash](https://telkom.co.ke/t-kash-getting-started/) (no public API portal) | None (unsigned) | request from Telkom |

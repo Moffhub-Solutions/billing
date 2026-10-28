@@ -173,7 +173,8 @@ class PayOrchestraWebhookTest extends BaseTestCase
     protected function postSignedWebhook(array $body): TestResponse
     {
         $payload = json_encode($body, JSON_THROW_ON_ERROR);
-        $signature = hash_hmac('sha256', $payload, 'whsec_test');
+        $timestamp = (string) time();
+        $signature = hash_hmac('sha256', $timestamp.'.'.$payload, 'whsec_test');
 
         return $this->call(
             'POST',
@@ -182,6 +183,7 @@ class PayOrchestraWebhookTest extends BaseTestCase
             [],
             [],
             [
+                'HTTP_X_PAYORCHESTRA_TIMESTAMP' => $timestamp,
                 'HTTP_X_PAYORCHESTRA_SIGNATURE' => $signature,
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_ACCEPT' => 'application/json',

@@ -1,3 +1,7 @@
+# v0.1.4 (Oct 28, 2026)
+* BREAKING: PayOrchestra driver callback verification follows the backbone's new contract. The signature is the HMAC-SHA256 of `{X-PayOrchestra-Timestamp}.{raw body}` and the timestamp must be within five minutes, so a captured delivery cannot be replayed. A body-only signature, or a callback with no timestamp, is refused. Use this release with a backbone that sends `X-PayOrchestra-Timestamp`; older packages cannot verify its callbacks
+* PayOrchestra driver: accept `X-PayOrchestra-Signature-Previous` during a webhook secret rotation, so a rotation does not drop callbacks
+
 # v0.1.3 (Oct 23, 2026)
 * PayOrchestra driver: card charges ask the backbone to wait for the provider's checkout page and return it as `metadata.authorization_url` (and `checkout_url`), so callers that redirect on that key work unchanged; `redirect_url` becomes the provider's return page; a payment the backbone fails outright now returns `success => false`
 * PayOrchestra driver: `createHostedSession` now sends `callback_url` (option, or the package webhook route), so the product is told when a hosted payment finishes

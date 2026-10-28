@@ -249,10 +249,65 @@ class PayOrchestraProviderTest extends BaseTestCase
     public function test_verify_webhook_with_valid_signature(): void
     {
         $payload = '{"event":"payment_intent.completed","data":{"id":"pi_123"}}';
-        $signature = hash_hmac('sha256', $payload, 'whsec_test');
+        $timestamp = (string) time();
+        $signature = hash_hmac('sha256', $timestamp.'.'.$payload, 'whsec_test');
 
         $request = Request::create('/webhook', 'POST', [], [], [], [
+            'HTTP_X_PAYORCHESTRA_TIMESTAMP' => $timestamp,
             'HTTP_X_PAYORCHESTRA_SIGNATURE' => $signature,
+        ], $payload);
+
+        $this->assertTrue($this->provider->verifyWebhook($request));
+    }
+
+    public function test_verify_webhook_rejects_a_stale_timestamp_even_when_correctly_signed(): void
+    {
+        $payload = '{"event":"payment_intent.completed","data":{"id":"pi_123"}}';
+        $timestamp = (string) (time() - 3600);
+        $signature = hash_hmac('sha256', $timestamp.'.'.$payload, 'whsec_test');
+
+        $request = Request::create('/webhook', 'POST', [], [], [], [
+            'HTTP_X_PAYORCHESTRA_TIMESTAMP' => $timestamp,
+            'HTTP_X_PAYORCHESTRA_SIGNATURE' => $signature,
+        ], $payload);
+
+        $this->assertFalse($this->provider->verifyWebhook($request));
+    }
+
+    public function test_verify_webhook_rejects_a_body_only_signature(): void
+    {
+        $payload = '{"event":"payment_intent.completed","data":{"id":"pi_123"}}';
+
+        $request = Request::create('/webhook', 'POST', [], [], [], [
+            'HTTP_X_PAYORCHESTRA_TIMESTAMP' => (string) time(),
+            'HTTP_X_PAYORCHESTRA_SIGNATURE' => hash_hmac('sha256', $payload, 'whsec_test'),
+        ], $payload);
+
+        $this->assertFalse($this->provider->verifyWebhook($request));
+    }
+
+    public function test_verify_webhook_rejects_a_missing_timestamp(): void
+    {
+        $payload = '{"event":"payment_intent.completed"}';
+
+        $request = Request::create('/webhook', 'POST', [], [], [], [
+            'HTTP_X_PAYORCHESTRA_SIGNATURE' => hash_hmac('sha256', '.'.$payload, 'whsec_test'),
+        ], $payload);
+
+        $this->assertFalse($this->provider->verifyWebhook($request));
+    }
+
+    public function test_verify_webhook_accepts_the_previous_secret_signature_during_rotation(): void
+    {
+        $payload = '{"event":"payment_intent.completed","data":{"id":"pi_123"}}';
+        $timestamp = (string) time();
+
+        // The backbone signs with the new secret (unknown to this product yet)
+        // and with the previous one, which this product still holds.
+        $request = Request::create('/webhook', 'POST', [], [], [], [
+            'HTTP_X_PAYORCHESTRA_TIMESTAMP' => $timestamp,
+            'HTTP_X_PAYORCHESTRA_SIGNATURE' => hash_hmac('sha256', $timestamp.'.'.$payload, 'whsec_new'),
+            'HTTP_X_PAYORCHESTRA_SIGNATURE_PREVIOUS' => hash_hmac('sha256', $timestamp.'.'.$payload, 'whsec_test'),
         ], $payload);
 
         $this->assertTrue($this->provider->verifyWebhook($request));
@@ -279,9 +334,11 @@ class PayOrchestraProviderTest extends BaseTestCase
         );
 
         $payload = '{"event":"payment_intent.completed"}';
-        $signature = hash_hmac('sha256', $payload, 'po_test_xxx');
+        $timestamp = (string) time();
+        $signature = hash_hmac('sha256', $timestamp.'.'.$payload, 'po_test_xxx');
 
         $request = Request::create('/webhook', 'POST', [], [], [], [
+            'HTTP_X_PAYORCHESTRA_TIMESTAMP' => $timestamp,
             'HTTP_X_PAYORCHESTRA_SIGNATURE' => $signature,
         ], $payload);
 

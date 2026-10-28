@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\Http;
 
 class PayOrchestraProvider extends BasePaymentProvider
 {
+    /** How far a callback's timestamp may be from now before it is refused. */
+    private const int CALLBACK_TOLERANCE_SECONDS = 300;
+
     protected string $baseUrl;
 
     public function __construct(
@@ -182,8 +185,12 @@ class PayOrchestraProvider extends BasePaymentProvider
     {
         $signatureRaw = $request->header('X-PayOrchestra-Signature');
         $signature = is_string($signatureRaw) ? $signatureRaw : '';
+        $previousRaw = $request->header('X-PayOrchestra-Signature-Previous');
+        $previous = is_string($previousRaw) ? $previousRaw : '';
+        $timestampRaw = $request->header('X-PayOrchestra-Timestamp');
+        $timestamp = is_string($timestampRaw) ? $timestampRaw : '';
 
-        if ($signature === '') {
+        if ($signature === '' && $previous === '') {
             return false;
         }
 
@@ -195,9 +202,23 @@ class PayOrchestraProvider extends BasePaymentProvider
             return false;
         }
 
-        $expected = hash_hmac('sha256', $request->getContent(), $this->webhookSecret);
+        // The signature covers "{timestamp}.{raw body}", so a captured delivery
+        // cannot be replayed later: the timestamp must be a recent unix time.
+        if (! ctype_digit($timestamp) || abs(time() - (int) $timestamp) > self::CALLBACK_TOLERANCE_SECONDS) {
+            return false;
+        }
 
-        return hash_equals($expected, $signature);
+        $expected = hash_hmac('sha256', $timestamp.'.'.$request->getContent(), $this->webhookSecret);
+
+        // During a secret rotation the backbone also sends the signature made
+        // with the previous secret; either one proves the sender.
+        foreach ([$signature, $previous] as $candidate) {
+            if ($candidate !== '' && hash_equals($expected, $candidate)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     #[\Override]
