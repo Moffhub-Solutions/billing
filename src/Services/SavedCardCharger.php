@@ -46,7 +46,7 @@ class SavedCardCharger
             return null;
         }
 
-        $period = $subscription->current_period_end?->timestamp ?? 0;
+        $period = $subscription->current_period_end->timestamp ?? 0;
 
         return [
             ...$options,
@@ -153,7 +153,7 @@ class SavedCardCharger
         }
 
         try {
-            return Carbon::create((int) $year, (int) $month, 1)->endOfMonth();
+            return Carbon::create((int) $year, (int) $month, 1)?->endOfMonth();
         } catch (\Throwable) {
             return null;
         }

@@ -26,8 +26,6 @@ class SavedCardRenewalTest extends BaseTestCase
 {
     private const SECRET = 'sk_test_saved_cards';
 
-    private Plan $plan;
-
     private Company $company;
 
     protected function setUp(): void
@@ -37,7 +35,7 @@ class SavedCardRenewalTest extends BaseTestCase
         config()->set('billing.providers.paystack.secret_key', self::SECRET);
         config()->set('billing.providers.paystack.webhook_secret', self::SECRET);
 
-        $this->plan = Plan::create([
+        Plan::create([
             'ulid' => Str::ulid()->toBase32(),
             'name' => 'Standard',
             'slug' => 'standard',
@@ -60,6 +58,9 @@ class SavedCardRenewalTest extends BaseTestCase
         return $subscription->refresh();
     }
 
+    /**
+     * @param  array<string, mixed>  $overrides
+     */
     private function saveCard(array $overrides = []): PaymentToken
     {
         return PaymentToken::create([
@@ -150,7 +151,7 @@ class SavedCardRenewalTest extends BaseTestCase
 
         $subscription->refresh();
         $this->assertSame(SubscriptionStatus::PAST_DUE, $subscription->status);
-        $this->assertTrue($subscription->current_period_end?->equalTo($end) ?? false);
+        $this->assertEquals($end?->toIso8601String(), $subscription->current_period_end?->toIso8601String());
         $this->assertSame(0, Payment::query()->where('status', PaymentStatus::COMPLETED)->count());
     }
 
