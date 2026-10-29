@@ -202,6 +202,50 @@ class UnmatchedPaymentTest extends BaseTestCase
         $this->getJson('/api/billing/admin/unmatched-payments')->assertOk()->assertJsonPath('meta.total', 2);
     }
 
+    public function test_the_list_searches_receipt_account_and_phone_and_counts_open_ones(): void
+    {
+        $this->stray('QWE111', '1000.00', 'ACME-RENT');
+        $this->stray('ASD222', '2000.00', 'OTHER');
+        $dismissed = UnmatchedPayment::query()->where('provider_payment_id', 'ASD222')->firstOrFail();
+        $this->postJson("/api/billing/admin/unmatched-payments/{$dismissed->id}/dismiss", ['reason' => 'x'])->assertOk();
+
+        $this->getJson('/api/billing/admin/unmatched-payments?search=acme')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.provider_payment_id', 'QWE111')
+            ->assertJsonPath('meta.open_count', 1);
+        $this->getJson('/api/billing/admin/unmatched-payments?search=ASD2')->assertJsonCount(1, 'data');
+        $this->getJson('/api/billing/admin/unmatched-payments?search=1234')->assertJsonCount(2, 'data');
+        $this->getJson('/api/billing/admin/unmatched-payments?search=nothing-like-it')->assertJsonCount(0, 'data');
+    }
+
+    public function test_invoice_lookup_offers_only_invoices_open_for_payment(): void
+    {
+        $open = $this->invoice(InvoiceStatus::OVERDUE);
+        $this->invoice(InvoiceStatus::PAID);
+        $this->invoice(InvoiceStatus::VOID);
+        $this->invoice(InvoiceStatus::DRAFT);
+        $usd = $this->invoice(InvoiceStatus::SENT, 1000, null, 'USD');
+
+        $response = $this->getJson('/api/billing/admin/unmatched-payments/invoices?currency=kes')->assertOk();
+        $response->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $open->id)
+            ->assertJsonPath('data.0.billable_name', 'Stray Co')
+            ->assertJsonPath('data.0.outstanding_balance', 500000);
+
+        $this->getJson('/api/billing/admin/unmatched-payments/invoices?search='.$usd->number)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $usd->id);
+    }
+
+    public function test_invoice_lookup_is_back_office_only(): void
+    {
+        Gate::define('__billing_admin_denied', fn (): bool => false);
+        config()->set('billing.admin_gate', '__billing_admin_denied');
+
+        $this->getJson('/api/billing/admin/unmatched-payments/invoices')->assertForbidden();
+    }
+
     public function test_it_is_back_office_only(): void
     {
         $this->stray();
