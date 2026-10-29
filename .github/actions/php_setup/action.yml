@@ -1,0 +1,71 @@
+name: 'PHP setup'
+description: 'Use the PHP already installed on a self-hosted runner, installing it only when it is missing'
+inputs:
+  php-version:
+    description: 'PHP version (major.minor)'
+    required: true
+  extensions:
+    description: 'Space separated extensions the job needs'
+    required: false
+    default: 'mbstring zip'
+
+runs:
+  using: composite
+  steps:
+    # The runners are self-hosted, so PHP persists between jobs. Look for the
+    # requested version (a php8.x binary or the default php) and put it first on
+    # PATH. Nothing is downloaded or installed unless it is truly missing.
+    - name: Select PHP ${{ inputs.php-version }}
+      id: select
+      shell: bash
+      env:
+        WANT_VERSION: ${{ inputs.php-version }}
+        WANT_EXTENSIONS: ${{ inputs.extensions }}
+      run: |
+        set -u
+        version_of() { "$1" -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || true; }
+
+        candidate=""
+        for path in "$(command -v "php${WANT_VERSION}" || true)" "/usr/local/php${WANT_VERSION}/bin/php" "/usr/bin/php${WANT_VERSION}" "$(command -v php || true)"; do
+          if [ -n "$path" ] && [ -x "$path" ] && [ "$(version_of "$path")" = "$WANT_VERSION" ]; then
+            candidate="$path"
+            break
+          fi
+        done
+
+        usable=false
+        if [ -n "$candidate" ]; then
+          shim_dir="${RUNNER_TEMP}/php-${WANT_VERSION}-bin"
+          mkdir -p "$shim_dir"
+          ln -sf "$candidate" "$shim_dir/php"
+          echo "$shim_dir" >> "$GITHUB_PATH"
+
+          missing=""
+          for extension in $WANT_EXTENSIONS; do
+            "$candidate" -r "exit(extension_loaded('$extension') ? 0 : 1);" || missing="$missing $extension"
+          done
+
+          echo "Runner $(hostname): ${candidate}, missing extensions:${missing:- none}"
+          if [ -z "$missing" ] && command -v composer >/dev/null 2>&1; then
+            usable=true
+          fi
+        else
+          echo "Runner $(hostname): no PHP ${WANT_VERSION} found."
+        fi
+
+        echo "usable=${usable}" >> "$GITHUB_OUTPUT"
+
+    - name: Install PHP ${{ inputs.php-version }} (not on this runner)
+      if: steps.select.outputs.usable != 'true'
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ inputs.php-version }}
+        tools: composer:v2
+        extensions: ${{ inputs.extensions }}
+        coverage: none
+
+    - name: Report PHP in use
+      shell: bash
+      run: |
+        php -v | head -n 1
+        composer --version
