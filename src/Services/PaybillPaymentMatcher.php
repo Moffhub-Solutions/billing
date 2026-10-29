@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Moffhub\Billing\Services;
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Moffhub\Billing\Enums\InvoiceStatus;
 use Moffhub\Billing\Enums\PaymentMethod;
 use Moffhub\Billing\Enums\PaymentStatus;
+use Moffhub\Billing\Enums\UnmatchedPaymentStatus;
 use Moffhub\Billing\Events\PaybillPaymentUnmatched;
 use Moffhub\Billing\Models\Invoice;
 use Moffhub\Billing\Models\Payment;
+use Moffhub\Billing\Models\UnmatchedPayment;
 
 /**
  * A customer who pays the paybill by hand, entering an invoice number as the
@@ -131,6 +134,31 @@ class PaybillPaymentMatcher
     protected function unmatched(array $c2b, string $transId, int $amount, string $reference): void
     {
         Log::warning('Billing: paybill payment matched no invoice', ['trans_id' => $transId, 'reference' => $reference]);
+
+        // Kept as a record so the money is never only a log line. Safaricom
+        // redelivers until answered, so the transaction id is the identity.
+        if (! UnmatchedPayment::query()->where('provider_payment_id', $transId)->exists()) {
+            $paidAt = null;
+
+            try {
+                $paidAt = is_string($c2b['TransTime'] ?? null) ? Carbon::createFromFormat('YmdHis', $c2b['TransTime']) : null;
+            } catch (\Throwable) {
+                // The time is a refinement; an unreadable one must not lose the payment.
+            }
+
+            $record = new UnmatchedPayment([
+                'ulid' => Str::ulid()->toBase32(),
+                'provider_payment_id' => $transId,
+                'provider' => 'mpesa',
+                'amount' => $amount,
+                'currency' => 'KES',
+                'account_reference' => $reference === '' ? null : mb_substr($reference, 0, 255),
+                'payer_phone' => is_string($c2b['MSISDN'] ?? null) ? $c2b['MSISDN'] : null,
+                'paid_at' => $paidAt,
+                'status' => UnmatchedPaymentStatus::OPEN,
+            ]);
+            $record->save();
+        }
 
         PaybillPaymentUnmatched::dispatch($transId, $amount, 'KES', $reference === '' ? null : $reference, is_string($c2b['MSISDN'] ?? null) ? $c2b['MSISDN'] : null);
     }

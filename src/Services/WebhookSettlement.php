@@ -155,6 +155,10 @@ class WebhookSettlement
             DB::transaction(function () use ($payment): void {
                 $invoice = Invoice::query()->lockForUpdate()->find($payment->invoice_id);
                 $invoice?->recalculateStatus();
+
+                if ($invoice instanceof Invoice) {
+                    app(SubscriptionRecovery::class)->afterInvoicePaid($invoice);
+                }
             });
         }
 

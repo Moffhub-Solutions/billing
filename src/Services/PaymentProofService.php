@@ -122,6 +122,10 @@ class PaymentProofService
             if ($payment->invoice_id !== null) {
                 $invoice = Invoice::query()->lockForUpdate()->find($payment->invoice_id);
                 $invoice?->recalculateStatus();
+
+                if ($invoice instanceof Invoice) {
+                    app(SubscriptionRecovery::class)->afterInvoicePaid($invoice);
+                }
             }
 
             PaymentReceived::dispatch(

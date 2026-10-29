@@ -12,6 +12,7 @@ use Moffhub\Billing\Http\Controllers\PaymentTokenController;
 use Moffhub\Billing\Http\Controllers\PlanController;
 use Moffhub\Billing\Http\Controllers\SubscriptionAddonController;
 use Moffhub\Billing\Http\Controllers\SubscriptionController;
+use Moffhub\Billing\Http\Controllers\UnmatchedPaymentController;
 use Moffhub\Billing\Http\Controllers\UsageController;
 
 /*
@@ -105,6 +106,13 @@ Route::prefix('admin/payment-proofs')->middleware('billing.admin')->group(functi
     Route::post('/', [PaymentProofController::class, 'store'])->name('billing.payment-proofs.store');
     Route::post('/{proof}/verify', [PaymentProofController::class, 'verify'])->name('billing.payment-proofs.verify');
     Route::post('/{proof}/reject', [PaymentProofController::class, 'reject'])->name('billing.payment-proofs.reject');
+});
+
+// ─── Paybill payments that named no invoice (back-office) ──────────────
+Route::prefix('admin/unmatched-payments')->middleware('billing.admin')->group(function (): void {
+    Route::get('/', [UnmatchedPaymentController::class, 'index'])->name('billing.unmatched-payments.index');
+    Route::post('/{payment}/allocate', [UnmatchedPaymentController::class, 'allocate'])->name('billing.unmatched-payments.allocate');
+    Route::post('/{payment}/dismiss', [UnmatchedPaymentController::class, 'dismiss'])->name('billing.unmatched-payments.dismiss');
 });
 
 // ─── Payment Methods / Tokens ──────────────────────────────────────────

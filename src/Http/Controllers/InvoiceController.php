@@ -16,6 +16,7 @@ use Moffhub\Billing\Http\Requests\StoreInvoiceRequest;
 use Moffhub\Billing\Http\Resources\InvoiceResource;
 use Moffhub\Billing\Models\Invoice;
 use Moffhub\Billing\Models\Payment;
+use Moffhub\Billing\Services\SubscriptionRecovery;
 
 class InvoiceController extends BillingController
 {
@@ -269,6 +270,10 @@ class InvoiceController extends BillingController
         );
 
         $fresh = $invoice->fresh();
+
+        if ($fresh !== null) {
+            app(SubscriptionRecovery::class)->afterInvoicePaid($fresh);
+        }
 
         return response()->json([
             'message' => 'Invoice marked as paid.',
