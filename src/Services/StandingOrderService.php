@@ -191,6 +191,23 @@ class StandingOrderService
     }
 
     /**
+     * Whether a paybill C2B confirmation is the debit of one of our standing
+     * orders, by the account reference the customer's order was created with.
+     * A paybill has one confirmation URL, so ordinary payments and standing
+     * order debits arrive together and this tells them apart.
+     *
+     * @param  array<array-key, mixed>  $payload
+     */
+    public function isDebitOfOrder(array $payload, string $provider = 'mpesa'): bool
+    {
+        $reference = $payload['BillRefNumber'] ?? null;
+
+        return is_string($payload['TransID'] ?? null)
+            && is_string($reference) && $reference !== ''
+            && StandingOrder::query()->where('provider', $provider)->open()->where('account_reference', $reference)->exists();
+    }
+
+    /**
      * Apply a provider callback. Safe to call repeatedly with the same payload.
      *
      * @param  array<array-key, mixed>  $payload

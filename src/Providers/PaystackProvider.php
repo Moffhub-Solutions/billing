@@ -136,11 +136,23 @@ class PaystackProvider extends BasePaymentProvider
             default => 'pending',
         };
 
+        $plan = is_array($data['plan'] ?? null) ? $data['plan'] : [];
+        $subscription = is_array($data['subscription'] ?? null) ? $data['subscription'] : [];
+        $customer = is_array($data['customer'] ?? null) ? $data['customer'] : [];
+        $subscriptionCode = $data['subscription_code'] ?? $subscription['subscription_code'] ?? null;
+        $planCode = $plan['plan_code'] ?? null;
+        $customerEmail = $customer['email'] ?? null;
+        $transactionMeta = is_array($data['metadata'] ?? null) ? $data['metadata'] : [];
+
         return [
             'event' => match ($event) {
                 'charge.success' => 'payment.completed',
                 'charge.failed' => 'payment.failed',
                 'refund.processed' => 'payment.refunded',
+                'subscription.create' => 'subscription.created',
+                'subscription.disable' => 'subscription.disabled',
+                'subscription.not_renew' => 'subscription.not_renewing',
+                'invoice.payment_failed' => 'subscription.payment_failed',
                 default => $event,
             },
             'provider_payment_id' => isset($data['reference']) && is_string($data['reference']) ? $data['reference'] : null,
@@ -152,6 +164,17 @@ class PaystackProvider extends BasePaymentProvider
                 'channel' => $data['channel'] ?? null,
                 'authorization' => $data['authorization'] ?? null,
                 'customer' => $data['customer'] ?? null,
+                // What the subscription handler needs. Paystack does not
+                // document these payloads, so every field is read defensively.
+                'subscription' => [
+                    'subscription_code' => is_string($subscriptionCode) ? $subscriptionCode : null,
+                    'email_token' => is_string($data['email_token'] ?? null) ? $data['email_token'] : null,
+                    'plan_code' => is_string($planCode) ? $planCode : null,
+                    'customer_email' => is_string($customerEmail) ? strtolower($customerEmail) : null,
+                    'next_payment_date' => is_string($data['next_payment_date'] ?? null) ? $data['next_payment_date'] : null,
+                    'status' => is_string($data['status'] ?? null) ? $data['status'] : null,
+                    'transaction_metadata' => $transactionMeta,
+                ],
             ],
         ];
     }
@@ -185,6 +208,11 @@ class PaystackProvider extends BasePaymentProvider
             'reference' => $this->optionNullableString($options, 'reference'),
             'callback_url' => $this->optionNullableString($options, 'callback_url'),
             'metadata' => $this->optionArray($options, 'metadata') ?: null,
+            // A plan code makes this the first charge of a subscription: the
+            // plan's amount replaces `amount` and Paystack bills every cycle.
+            'plan' => $this->optionNullableString($options, 'plan'),
+            // Limits the checkout page to these channels (e.g. ['card']).
+            'channels' => $this->optionArray($options, 'channels') ?: null,
         ];
 
         // Merge after array_filter so a dynamic split array (and a zero
@@ -326,5 +354,121 @@ class PaystackProvider extends BasePaymentProvider
         }
 
         return ['split_code' => $code];
+    }
+
+    // ─── Plans and subscriptions (cards; Paystack bills each cycle) ────
+
+    /**
+     * Create a plan on Paystack.
+     *
+     * @return array{success: bool, plan_code: string|null, message: string|null}
+     */
+    public function createPlan(string $name, int $amount, string $interval, string $currency, ?string $description = null): array
+    {
+        $body = array_filter([
+            'name' => $name,
+            'amount' => $amount,
+            'interval' => $interval,
+            'currency' => $currency,
+            'description' => $description,
+        ], static fn (mixed $value): bool => $value !== null);
+
+        $response = Http::withToken($this->secretKey)->post($this->baseUrl.'/plan', $body);
+
+        return [
+            'success' => ($this->asArray($response->json())['status'] ?? false) === true,
+            'plan_code' => $this->jsonNullableString($response, 'data.plan_code'),
+            'message' => $this->jsonNullableString($response, 'message'),
+        ];
+    }
+
+    /**
+     * Update a plan. `$updateExisting` also applies the change to the plan's
+     * live subscriptions, so it is off unless the caller asks for it.
+     *
+     * @return array{success: bool, message: string|null}
+     */
+    public function updatePlan(string $planCode, string $name, int $amount, string $interval, ?string $description = null, bool $updateExisting = false): array
+    {
+        $body = array_filter([
+            'name' => $name,
+            'amount' => $amount,
+            'interval' => $interval,
+            'description' => $description,
+            'update_existing_subscriptions' => $updateExisting,
+        ], static fn (mixed $value): bool => $value !== null);
+
+        $response = Http::withToken($this->secretKey)->put($this->baseUrl.'/plan/'.$planCode, $body);
+
+        return [
+            'success' => ($this->asArray($response->json())['status'] ?? false) === true,
+            'message' => $this->jsonNullableString($response, 'message'),
+        ];
+    }
+
+    /**
+     * Subscribe a customer who already has a saved card.
+     *
+     * @return array{success: bool, subscription_code: string|null, email_token: string|null, message: string|null}
+     */
+    public function createSubscription(string $customer, string $planCode, ?string $authorization = null, ?string $startDate = null): array
+    {
+        $body = array_filter([
+            'customer' => $customer,
+            'plan' => $planCode,
+            'authorization' => $authorization,
+            'start_date' => $startDate,
+        ], static fn (mixed $value): bool => $value !== null);
+
+        $response = Http::withToken($this->secretKey)->post($this->baseUrl.'/subscription', $body);
+
+        return [
+            'success' => ($this->asArray($response->json())['status'] ?? false) === true,
+            'subscription_code' => $this->jsonNullableString($response, 'data.subscription_code'),
+            'email_token' => $this->jsonNullableString($response, 'data.email_token'),
+            'message' => $this->jsonNullableString($response, 'message'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function fetchSubscription(string $subscriptionCode): array
+    {
+        $response = Http::withToken($this->secretKey)->get($this->baseUrl.'/subscription/'.$subscriptionCode);
+        $data = $this->asArray($response->json());
+
+        return isset($data['data']) && is_array($data['data']) ? $this->stringKeyed($data['data']) : [];
+    }
+
+    /**
+     * Stop Paystack charging a subscription. Needs the `email_token` Paystack
+     * returned when the subscription was created.
+     */
+    public function disableSubscription(string $subscriptionCode, string $emailToken): bool
+    {
+        $response = Http::withToken($this->secretKey)
+            ->post($this->baseUrl.'/subscription/disable', ['code' => $subscriptionCode, 'token' => $emailToken]);
+
+        return ($this->asArray($response->json())['status'] ?? false) === true;
+    }
+
+    public function enableSubscription(string $subscriptionCode, string $emailToken): bool
+    {
+        $response = Http::withToken($this->secretKey)
+            ->post($this->baseUrl.'/subscription/enable', ['code' => $subscriptionCode, 'token' => $emailToken]);
+
+        return ($this->asArray($response->json())['status'] ?? false) === true;
+    }
+
+    /**
+     * A hosted page where the customer updates the card or cancels.
+     */
+    public function subscriptionManageLink(string $subscriptionCode): ?string
+    {
+        $response = Http::withToken($this->secretKey)
+            ->get($this->baseUrl.'/subscription/'.$subscriptionCode.'/manage/link');
+
+        return $this->jsonNullableString($response, 'data.link');
     }
 }

@@ -12,10 +12,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Moffhub\Billing\Database\Factories\SubscriptionFactory;
 use Moffhub\Billing\Enums\SubscriptionStatus;
 use Moffhub\Billing\Events\SubscriptionPaused;
 use Moffhub\Billing\Events\SubscriptionResumed;
+use Moffhub\Billing\Services\PaystackSubscriptionService;
 
 /**
  * @property int $id
@@ -201,6 +203,19 @@ class Subscription extends Model
         }
 
         $this->save();
+
+        // A subscription Paystack bills would otherwise keep being charged.
+        $paystack = app(PaystackSubscriptionService::class);
+
+        if ($paystack->isProviderBilled($this)) {
+            try {
+                if (! $paystack->disable($this)) {
+                    Log::warning("Billing: could not stop Paystack billing subscription {$this->id}");
+                }
+            } catch (\Throwable $e) {
+                Log::error("Billing: stopping Paystack billing failed for subscription {$this->id}", ['error' => $e->getMessage()]);
+            }
+        }
 
         return $this;
     }

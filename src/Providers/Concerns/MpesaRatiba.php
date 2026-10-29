@@ -83,7 +83,7 @@ trait MpesaRatiba
         $identifierTypes = $this->ratibaMap('receiver_party_identifier_types', ['paybill' => '4', 'till' => '2']);
         $transactionTypes = $this->ratibaMap('transaction_types', [
             'paybill' => 'Standing Order Customer Pay Bill',
-            'till' => 'Standing Order Customer Pay Merchant',
+            'till' => 'Standing Order Customer Pay Marchant',
         ]);
 
         $payload = [
@@ -93,7 +93,7 @@ trait MpesaRatiba
             'BusinessShortCode' => $this->shortcode,
             'TransactionType' => $transactionTypes[$type] ?? $transactionTypes['paybill'],
             'ReceiverPartyIdentifierType' => $identifierTypes[$type] ?? '4',
-            'Amount' => (int) ceil($cents / 100), // cents to whole KES, as for STK Push
+            'Amount' => (string) (int) ceil($cents / 100), // cents to whole KES, as for STK Push; Safaricom documents it as a string
             'PartyA' => $phone,
             'CallBackURL' => $callback,
             'AccountReference' => substr((string) preg_replace('/[^A-Za-z0-9]/', '', $accountReference), 0, 12),
@@ -109,7 +109,7 @@ trait MpesaRatiba
 
         $code = $this->ratibaResponseCode($data);
         $success = $response->successful() && in_array($code, ['0', '00', '200'], true);
-        $ref = $this->ratibaFirst($data, ['ResponseHeader.responseRefID', 'responseRefID', 'ResponseRefID']);
+        $ref = $this->ratibaFirst($data, ['ResponseHeader.responseRefID', 'responseHeader.responseRefID', 'responseRefID', 'ResponseRefID']);
 
         return [
             'success' => $success,
@@ -181,7 +181,7 @@ trait MpesaRatiba
         $c2b = isset($payload['TransID']) && is_string($payload['TransID']);
 
         $code = $c2b ? '0' : $this->ratibaFirst($payload, [
-            'ResponseBody.responseCode', 'ResponseBody.ResponseCode', 'responseCode', 'ResponseCode', 'ResponseHeader.responseCode', 'ResultCode',
+            'ResponseBody.responseCode', 'ResponseBody.ResponseData.responseCode', 'ResponseBody.ResponseCode', 'responseCode', 'ResponseCode', 'ResponseHeader.responseCode', 'responseHeader.responseCode', 'ResultCode',
         ]);
 
         $amountRaw = $c2b
@@ -189,16 +189,16 @@ trait MpesaRatiba
             : $this->ratibaFirst($payload, ['ResponseBody.Amount', 'ResponseBody.amount', 'Amount']);
 
         return [
-            'provider_reference' => $this->ratibaFirst($payload, ['ResponseHeader.responseRefID', 'responseRefID']),
-            'request_reference' => $this->ratibaFirst($payload, ['ResponseHeader.requestRefID', 'requestRefID']),
+            'provider_reference' => $this->ratibaFirst($payload, ['ResponseHeader.responseRefID', 'responseHeader.responseRefID', 'responseRefID']),
+            'request_reference' => $this->ratibaFirst($payload, ['ResponseHeader.requestRefID', 'responseHeader.requestRefID', 'requestRefID']),
             'account_reference' => $c2b ? $this->ratibaFirst($payload, ['BillRefNumber']) : $this->ratibaFirst($payload, ['ResponseBody.AccountReference', 'AccountReference']),
             'standing_order_id' => $this->ratibaFirst($payload, ['ResponseBody.standingOrderID', 'ResponseBody.StandingOrderID', 'StandingOrderID', 'standingOrderID']),
-            'transaction_id' => $c2b ? $this->ratibaFirst($payload, ['TransID']) : $this->ratibaFirst($payload, ['ResponseBody.TransactionID', 'ResponseBody.transactionID', 'TransactionID']),
+            'transaction_id' => $c2b ? $this->ratibaFirst($payload, ['TransID']) : $this->ratibaFirst($payload, ['ResponseBody.ResponseData.TransactionID', 'ResponseBody.TransactionID', 'ResponseBody.transactionID', 'TransactionID']),
             'amount' => is_numeric($amountRaw) ? (int) round(((float) $amountRaw) * 100) : null,
             'success' => in_array($code, ['0', '00', '200'], true),
             'result_code' => $code,
-            'description' => $this->ratibaFirst($payload, ['ResponseBody.responseDescription', 'ResponseHeader.responseDescription', 'responseDescription', 'ResultDesc']),
-            'status' => $this->ratibaFirst($payload, ['ResponseBody.Status', 'ResponseBody.status', 'Status']),
+            'description' => $this->ratibaFirst($payload, ['ResponseBody.responseDescription', 'ResponseHeader.responseDescription', 'responseHeader.responseDescription', 'responseDescription', 'ResultDesc']),
+            'status' => $this->ratibaFirst($payload, ['ResponseBody.ResponseData.Status', 'ResponseBody.Status', 'ResponseBody.status', 'Status']),
             'raw' => $payload,
         ];
     }
@@ -277,7 +277,7 @@ trait MpesaRatiba
     protected function ratibaResponseCode(array $data): ?string
     {
         return $this->ratibaFirst($data, [
-            'ResponseHeader.responseCode', 'responseCode', 'ResponseCode', 'ResponseBody.responseCode',
+            'ResponseHeader.responseCode', 'responseHeader.responseCode', 'responseCode', 'ResponseCode', 'ResponseBody.responseCode',
         ]);
     }
 

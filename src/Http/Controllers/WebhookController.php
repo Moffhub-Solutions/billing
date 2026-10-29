@@ -11,6 +11,10 @@ use Illuminate\Support\Facades\Log;
 use Moffhub\Billing\Contracts\PaymentProviderInterface;
 use Moffhub\Billing\Jobs\ConfirmWebhookPayment;
 use Moffhub\Billing\PaymentManager;
+use Moffhub\Billing\Services\PaybillPaymentMatcher;
+use Moffhub\Billing\Services\PaystackSubscriptionService;
+use Moffhub\Billing\Services\SavedCardCharger;
+use Moffhub\Billing\Services\StandingOrderService;
 use Moffhub\Billing\Services\WebhookSettlement;
 use Symfony\Component\HttpFoundation\IpUtils;
 
@@ -19,6 +23,10 @@ class WebhookController extends Controller
     public function __construct(
         protected PaymentManager $paymentManager,
         protected WebhookSettlement $settlement,
+        protected PaystackSubscriptionService $subscriptions,
+        protected StandingOrderService $standingOrders,
+        protected PaybillPaymentMatcher $paybill,
+        protected SavedCardCharger $savedCards,
     ) {}
 
     /**
@@ -163,7 +171,40 @@ class WebhookController extends Controller
             $verified = $driver->verifyWebhook($request) || $this->secretMatches($request, $providerName);
 
             if ($verified) {
+                // Paystack bills card subscriptions itself and reports each
+                // cycle here. These update the subscription; they are not
+                // one-off payments to settle.
+                if ($providerName === 'paystack' && $this->subscriptions->handle($event)) {
+                    return response()->json(['status' => 'received']);
+                }
+
+                // A paybill has one C2B confirmation URL. A standing order
+                // (Ratiba) debit arrives on it like any payment, so it is
+                // recorded against its order here; any other C2B payment
+                // carries on to the normal settlement below.
+                if ($providerName === 'mpesa'
+                    && config('billing.providers.mpesa.ratiba.enabled', false)
+                    && $this->standingOrders->isDebitOfOrder($request->all())
+                    && $this->standingOrders->handleCallback($request->all())['handled']) {
+                    return response()->json(['status' => 'received']);
+                }
+
+                // A customer who pays the paybill by hand starts no payment of
+                // ours. Record it against the invoice its account number names,
+                // so the settlement below can complete it.
+                if ($providerName === 'mpesa'
+                    && config('billing.providers.mpesa.match_invoices', true)
+                    && is_string($request->input('TransID'))) {
+                    $this->paybill->record($request->all());
+                }
+
                 $this->settlement->settle($providerName, $event['provider_payment_id'], $event['status'], $event['metadata']);
+
+                // Keep the card from a completed Paystack payment, so a later
+                // renewal can charge it without the customer present.
+                if ($providerName === 'paystack' && $event['event'] === 'payment.completed') {
+                    $this->savedCards->captureFromPaystack($event);
+                }
 
                 return response()->json(['status' => 'received']);
             }

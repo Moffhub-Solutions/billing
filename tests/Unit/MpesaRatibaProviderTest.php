@@ -86,7 +86,7 @@ class MpesaRatibaProviderTest extends BaseTestCase
                 && $d['EndDate'] === '20271101'
                 && $d['BusinessShortCode'] === '600000'
                 && $d['ReceiverPartyIdentifierType'] === '4'
-                && $d['Amount'] === 5001
+                && $d['Amount'] === '5001'
                 && $d['PartyA'] === '254712345678'
                 && $d['AccountReference'] === 'ACME001long'
                 && $d['Frequency'] === '6'

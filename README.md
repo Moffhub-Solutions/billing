@@ -187,6 +187,12 @@ $result = $manager->driver('paystack')->charge(750000, 'KES', [
     'email' => 'customer@example.com',
 ]);
 
+// A recurring card subscription that Paystack bills each cycle (run once: php artisan billing:sync-plans --paystack).
+// Paystack recurs cards only; for M-Pesa use a standing order (Ratiba). Both keep the same Subscription in step.
+$checkout = app(\Moffhub\Billing\Services\PaystackSubscriptionService::class)
+    ->start($company, 'starter', 'customer@example.com', ['callback_url' => $returnUrl]);
+// Redirect to $checkout['metadata']['authorization_url']; the subscription appears after the first payment.
+
 // Collect via KCB BUNI (M-Pesa, Airtel, T-Kash, VOOMA, or bank)
 $result = $manager->driver('kcb')->charge(50000, 'KES', [
     'phone' => '0712345678',

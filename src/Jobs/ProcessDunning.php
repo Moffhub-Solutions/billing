@@ -22,6 +22,8 @@ use Moffhub\Billing\Events\SubscriptionRenewed;
 use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\Models\Subscription;
 use Moffhub\Billing\PaymentManager;
+use Moffhub\Billing\Services\PaystackSubscriptionService;
+use Moffhub\Billing\Services\SavedCardCharger;
 
 class ProcessDunning implements ShouldBeUnique, ShouldQueue
 {
@@ -34,7 +36,15 @@ class ProcessDunning implements ShouldBeUnique, ShouldQueue
             ->with(['plan', 'billable'])
             ->get();
 
+        $paystack = app(PaystackSubscriptionService::class);
+
         foreach ($subscriptions as $subscription) {
+            // Paystack retries and reports its own subscriptions; charging
+            // them here as well could bill the customer twice.
+            if ($paystack->isProviderBilled($subscription)) {
+                continue;
+            }
+
             $this->processDunning($subscription, $paymentManager);
         }
     }
@@ -93,12 +103,21 @@ class ProcessDunning implements ShouldBeUnique, ShouldQueue
             if (! $driver instanceof PaymentProviderInterface) {
                 throw new \RuntimeException("driver({$provider}) did not resolve to PaymentProviderInterface.");
             }
-            $result = $driver->charge($plan->base_price, $currency, [
-                'subscription_id' => $subscription->id,
-                'description' => "Dunning retry for {$plan->name} (day {$daysSinceFailure})",
-            ]);
+            $charger = app(SavedCardCharger::class);
+            $options = $charger->options($subscription, $provider, "Dunning retry for {$plan->name} (day {$daysSinceFailure})", 'dun'.$daysSinceFailure);
+
+            if ($options === null) {
+                $this->handleRetryFailure($subscription, $provider, $currency, [
+                    'metadata' => ['error' => 'No usable saved card on file'],
+                ], $daysSinceFailure, $dunningSchedule, $gracePeriodDays);
+
+                return;
+            }
+
+            $result = $driver->charge($plan->base_price, $currency, $options);
 
             if ($result['success']) {
+                $charger->usableToken($subscription, $provider)?->markUsed();
                 $cycleDays = $plan->billing_cycle->days();
 
                 $subscription->update([

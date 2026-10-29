@@ -8,11 +8,14 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 use Moffhub\Billing\Models\Feature;
 use Moffhub\Billing\Models\Plan;
+use Moffhub\Billing\Services\PaystackSubscriptionService;
 
 class SyncPlansCommand extends Command
 {
     protected $signature = 'billing:sync-plans
         {--seed : Also seed default plan tiers}
+        {--paystack : Create or update every active plan on Paystack, so it can be subscribed to}
+        {--update-existing : With --paystack, also apply a changed price to live subscriptions}
         {--dry-run : Show what would be synced without making changes}';
 
     protected $description = 'Sync plan features from config to the database';
@@ -21,6 +24,10 @@ class SyncPlansCommand extends Command
     {
         if ($this->option('seed')) {
             return $this->seedDefaults();
+        }
+
+        if ($this->option('paystack')) {
+            return $this->syncPaystack();
         }
 
         $this->info('Syncing billing plans and features...');
@@ -45,6 +52,35 @@ class SyncPlansCommand extends Command
         $this->info("Plans: {$plans->count()} | Features: {$features->count()}");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Put each active plan on Paystack as a recurring plan. Safe to repeat:
+     * a plan whose price and cycle did not change is left alone.
+     */
+    protected function syncPaystack(): int
+    {
+        $plans = Plan::query()->where('is_active', true)->orderBy('sort_order')->get();
+        $service = app(PaystackSubscriptionService::class);
+        $dryRun = (bool) $this->option('dry-run');
+        $failed = false;
+        $rows = [];
+
+        foreach ($plans as $plan) {
+            if ($dryRun) {
+                $rows[] = [$plan->slug, $service->planCode($plan) === null ? 'would create' : 'would check', $service->planCode($plan) ?? '-', ''];
+
+                continue;
+            }
+
+            $result = $service->syncPlan($plan, (bool) $this->option('update-existing'));
+            $failed = $failed || $result['action'] === 'failed';
+            $rows[] = [$plan->slug, $result['action'], $result['plan_code'] ?? '-', $result['message'] ?? ''];
+        }
+
+        $this->table(['Plan', 'Result', 'Paystack plan', 'Message'], $rows);
+
+        return $failed ? self::FAILURE : self::SUCCESS;
     }
 
     protected function seedDefaults(): int

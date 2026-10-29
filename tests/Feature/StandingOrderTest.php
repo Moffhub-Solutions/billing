@@ -369,4 +369,106 @@ class StandingOrderTest extends BaseTestCase
 
         $this->postJson('/billing/webhooks/mpesa/ratiba', $this->activationPayload())->assertOk();
     }
+
+    public function test_a_paybill_order_sends_the_fields_safaricom_documents(): void
+    {
+        Http::fake([
+            '*/oauth/v1/generate*' => Http::response(['access_token' => 'tok']),
+            '*/createStandingOrderExternal' => Http::response([
+                'responseHeader' => ['responseRefID' => 'ref-doc', 'responseCode' => '200'],
+                'ResponseBody' => ['responseDescription' => 'Request accepted for processing', 'responseCode' => '200'],
+            ]),
+        ]);
+
+        $order = $this->service()->createForSubscription($this->subscription, '0712345678', [
+            'consent' => true, 'account_reference' => 'ACME-1234-5678-9', 'description' => 'Starter plan monthly',
+        ]);
+
+        Http::assertSent(function ($request): bool {
+            if (! str_ends_with($request->url(), '/createStandingOrderExternal')) {
+                return true;
+            }
+
+            return $request['TransactionType'] === 'Standing Order Customer Pay Bill'
+                && $request['ReceiverPartyIdentifierType'] === '4'
+                && $request['BusinessShortCode'] === '600000'
+                && $request['Amount'] === '5000'
+                && $request['Frequency'] === '4'
+                && $request['PartyA'] === '254712345678'
+                && preg_match('/^[A-Za-z0-9]{1,12}$/', $request['AccountReference']) === 1
+                && strlen($request['TransactionDesc']) <= 13
+                && preg_match('/^\d{8}$/', $request['StartDate']) === 1;
+        });
+        $this->assertSame('ref-doc', $order->provider_reference, 'the reference is read from the documented lower case header');
+        $this->assertSame(StandingOrderStatus::Pending, $order->status);
+    }
+
+    public function test_the_documented_callbacks_activate_and_fail_an_order(): void
+    {
+        Event::fake([StandingOrderActivated::class, StandingOrderFailed::class]);
+        Http::fake([
+            '*/oauth/v1/generate*' => Http::response(['access_token' => 'tok']),
+            '*/createStandingOrderExternal' => Http::response(['responseHeader' => ['responseRefID' => 'ref-doc', 'responseCode' => '200']]),
+        ]);
+        $order = $this->service()->createForSubscription($this->subscription, '0712345678', ['consent' => true]);
+
+        $ok = $this->service()->handleCallback([
+            'responseHeader' => ['responseRefID' => 'ref-doc', 'responseCode' => '0'],
+            'ResponseBody' => ['ResponseData' => ['TransactionID' => 'SC8F2IQMH5', 'responseCode' => '0', 'Status' => 'OKAY', 'Msisdn' => '254******867']],
+        ]);
+
+        $this->assertSame('activated', $ok['event']);
+        $this->assertSame(StandingOrderStatus::Active, $order->refresh()->status);
+
+        $other = $this->service()->createForSubscription($this->subscription, '0712345678', ['consent' => true, 'allow_multiple' => true]);
+        $other->provider_reference = 'ref-fail';
+        $other->save();
+        $bad = $this->service()->handleCallback([
+            'responseHeader' => ['responseRefID' => 'ref-fail', 'responseCode' => '1037', 'responseDescription' => 'Error'],
+            'ResponseBody' => ['ResponseData' => ['TransactionID' => '0000000000', 'responseCode' => '1037', 'Status' => 'ERROR']],
+        ]);
+
+        $this->assertSame('failed', $bad['event']);
+        $this->assertSame(StandingOrderStatus::Failed, $other->refresh()->status);
+    }
+
+    public function test_a_ratiba_debit_on_the_paybill_confirmation_url_is_recorded_against_its_order(): void
+    {
+        $this->setConfig('billing.webhooks.providers.mpesa.secret', 'c2bsecret');
+        $this->createOrder();
+        $this->service()->handleCallback($this->activationPayload());
+
+        $this->postJson('/billing/webhooks/mpesa?secret=c2bsecret', $this->debit('TXNRATIBA1'))->assertOk();
+
+        $this->assertSame(1, StandingOrderExecution::query()->count());
+        $this->assertSame(1, Payment::query()->where('provider_payment_id', 'TXNRATIBA1')->count());
+
+        // The same confirmation delivered again is not recorded twice.
+        $this->postJson('/billing/webhooks/mpesa?secret=c2bsecret', $this->debit('TXNRATIBA1'))->assertOk();
+        $this->assertSame(1, StandingOrderExecution::query()->count());
+    }
+
+    public function test_an_ordinary_paybill_payment_is_not_taken_for_a_standing_order_debit(): void
+    {
+        $this->setConfig('billing.webhooks.providers.mpesa.secret', 'c2bsecret');
+        $this->createOrder();
+        $this->service()->handleCallback($this->activationPayload());
+
+        $this->postJson('/billing/webhooks/mpesa?secret=c2bsecret', ['TransID' => 'TXNOTHER1', 'TransAmount' => '100.00', 'BillRefNumber' => 'SOMETHINGELSE'])->assertOk();
+
+        $this->assertSame(0, StandingOrderExecution::query()->count());
+    }
+
+    public function test_an_unverified_confirmation_never_records_a_debit(): void
+    {
+        $this->setConfig('billing.webhooks.providers.mpesa.secret', 'c2bsecret');
+        $this->createOrder();
+        $this->service()->handleCallback($this->activationPayload());
+
+        $this->postJson('/billing/webhooks/mpesa', $this->debit('TXNFORGED1'));
+        $this->postJson('/billing/webhooks/mpesa?secret=wrong', $this->debit('TXNFORGED2'));
+
+        $this->assertSame(0, StandingOrderExecution::query()->count());
+        $this->assertSame(0, Payment::query()->whereIn('provider_payment_id', ['TXNFORGED1', 'TXNFORGED2'])->count());
+    }
 }

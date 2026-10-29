@@ -285,6 +285,8 @@ return [
             | Daraja calls are made while disabled. Verify field names and
             | endpoints against Safaricom docs before go-live (see README).
             */
+            // Match a customer's own paybill payment to the invoice whose number they typed as the account.
+            'match_invoices' => (bool) env('MPESA_MATCH_INVOICES', true),
             'ratiba' => [
                 'enabled' => (bool) env('MPESA_RATIBA_ENABLED', false),
                 'callback_url' => env('MPESA_RATIBA_CALLBACK_URL'),
@@ -302,7 +304,7 @@ return [
                 ],
                 'transaction_types' => [
                     'paybill' => 'Standing Order Customer Pay Bill',
-                    'till' => 'Standing Order Customer Pay Merchant',
+                    'till' => 'Standing Order Customer Pay Marchant',
                 ],
                 'receiver_party_identifier_types' => ['paybill' => '4', 'till' => '2'],
                 'pending_timeout_hours' => (int) env('MPESA_RATIBA_PENDING_TIMEOUT_HOURS', 24),

@@ -21,6 +21,8 @@ use Moffhub\Billing\Events\SubscriptionRenewed;
 use Moffhub\Billing\Models\Payment;
 use Moffhub\Billing\Models\Subscription;
 use Moffhub\Billing\PaymentManager;
+use Moffhub\Billing\Services\PaystackSubscriptionService;
+use Moffhub\Billing\Services\SavedCardCharger;
 use Moffhub\Billing\Services\UsageService;
 
 class ProcessRenewals implements ShouldBeUnique, ShouldQueue
@@ -40,7 +42,17 @@ class ProcessRenewals implements ShouldBeUnique, ShouldQueue
             ->with(['plan', 'billable'])
             ->get();
 
+        // Paystack bills its card subscriptions itself and reports each cycle
+        // by webhook; charging them here too would bill the customer twice.
+        $paystack = app(PaystackSubscriptionService::class);
+
         foreach ($subscriptions as $subscription) {
+            if ($paystack->isProviderBilled($subscription)) {
+                $paystack->lapseIfOverdue($subscription);
+
+                continue;
+            }
+
             $this->processRenewal($subscription, $paymentManager);
         }
     }
@@ -77,12 +89,24 @@ class ProcessRenewals implements ShouldBeUnique, ShouldQueue
             if (! $driver instanceof PaymentProviderInterface) {
                 throw new \RuntimeException("driver({$provider}) did not resolve to PaymentProviderInterface.");
             }
-            $result = $driver->charge($amount, $currency, [
-                'subscription_id' => $subscription->id,
-                'description' => "Renewal for {$plan->name}",
-            ]);
+            // No customer is present to enter details, so a card is charged
+            // from the one saved after their earlier payment. The reference is
+            // fixed for this period, so a retried job cannot bill it twice.
+            $charger = app(SavedCardCharger::class);
+            $options = $charger->options($subscription, $provider, "Renewal for {$plan->name}");
+
+            if ($options === null) {
+                $this->handleFailure($subscription, $provider, $currency, $amount, [
+                    'metadata' => ['error' => 'No usable saved card on file'],
+                ]);
+
+                return;
+            }
+
+            $result = $driver->charge($amount, $currency, $options);
 
             if ($result['success']) {
+                $charger->usableToken($subscription, $provider)?->markUsed();
                 $cycleDays = $plan->billing_cycle->days();
 
                 $subscription->update([
