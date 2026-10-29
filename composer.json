@@ -95,6 +95,7 @@
             "vendor/bin/pint"
         ],
         "phpstan": [
+            "vendor/bin/testbench package:discover --ansi",
             "vendor/bin/phpstan --memory-limit=512M"
         ],
         "rector": [
