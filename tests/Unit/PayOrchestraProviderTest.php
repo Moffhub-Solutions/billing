@@ -237,6 +237,137 @@ class PayOrchestraProviderTest extends BaseTestCase
         $this->assertEquals('completed', $this->provider->getPaymentStatus('pi_xyz'));
     }
 
+    /**
+     * A payment read from the backbone carries its status as an object, not the
+     * plain string the signed callback carries. These use the real shape.
+     */
+    public function test_get_payment_status_reads_the_status_object_the_backbone_returns(): void
+    {
+        Http::fake([
+            'https://backbone.test/api/v1/client/payment-intents/pi_obj' => Http::response([
+                'data' => ['id' => 'pi_obj', 'status' => ['value' => 'completed', 'label' => 'Completed', 'color' => 'green']],
+            ]),
+        ]);
+
+        $this->assertSame('completed', $this->provider->getPaymentStatus('pi_obj'));
+    }
+
+    public function test_get_payment_status_maps_every_object_status(): void
+    {
+        $expected = [
+            'created' => 'pending',
+            'validated' => 'pending',
+            'routed' => 'pending',
+            'processing' => 'pending',
+            'completed' => 'completed',
+            'failed' => 'failed',
+            'expired' => 'failed',
+            'refunded' => 'refunded',
+        ];
+
+        // One answer per call, in order: a plain Http::fake keeps the first stub it was given.
+        $answers = Http::sequence();
+        foreach (array_keys($expected) as $backbone) {
+            $answers->push(['data' => ['status' => ['value' => $backbone, 'label' => ucfirst($backbone), 'color' => 'grey']]]);
+        }
+        Http::fake(['https://backbone.test/api/v1/client/payment-intents/pi_s' => $answers]);
+
+        foreach ($expected as $backbone => $mapped) {
+            $this->assertSame($mapped, $this->provider->getPaymentStatus('pi_s'), "backbone status {$backbone}");
+        }
+    }
+
+    public function test_a_payment_the_backbone_failed_outright_is_not_a_success_with_the_object_status(): void
+    {
+        Http::fake([
+            'https://backbone.test/api/v1/client/payment-intents' => Http::response([
+                'data' => [
+                    'id' => 'pi_f2',
+                    'reference_number' => 'PAY-F2',
+                    'status' => ['value' => 'failed', 'label' => 'Failed', 'color' => 'red'],
+                    'failure_reason' => 'no_connector_available',
+                ],
+            ], 201),
+        ]);
+
+        $result = $this->provider->charge(25000, 'KES', ['channel' => 'card', 'email' => 'a@b.co']);
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('PAY-F2', $result['provider_reference']);
+    }
+
+    public function test_charge_reads_the_reference_from_whichever_name_the_backbone_uses(): void
+    {
+        Http::fake([
+            'https://backbone.test/api/v1/client/payment-intents' => Http::response([
+                'data' => [
+                    'id' => 'pi_r1',
+                    'reference_number' => 'PAY-R1',
+                    'status' => ['value' => 'processing', 'label' => 'Processing', 'color' => 'amber'],
+                    'checkout_url' => 'https://checkout.test/abc',
+                ],
+            ], 201),
+        ]);
+
+        $result = $this->provider->charge(25000, 'KES', ['email' => 'a@b.co', 'redirect_url' => 'https://app.test/return']);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('PAY-R1', $result['provider_reference']);
+        $this->assertSame('pending', $result['status']);
+        $this->assertSame('https://checkout.test/abc', $result['metadata']['checkout_url']);
+        $this->assertSame('https://checkout.test/abc', $result['metadata']['authorization_url']);
+    }
+
+    public function test_a_charge_with_an_email_and_no_channel_waits_for_the_checkout_page(): void
+    {
+        Http::fake([
+            'https://backbone.test/api/v1/client/payment-intents' => Http::response([
+                'data' => ['id' => 'pi_w1', 'status' => ['value' => 'created']],
+            ], 201),
+        ]);
+
+        // What a product's Pay now sends: an email, a return address, no channel.
+        $this->provider->charge(25000, 'KES', ['email' => 'a@b.co', 'redirect_url' => 'https://app.test/return', 'reference' => '01ORDER']);
+
+        Http::assertSent(fn ($request) => $request['wait_for_checkout'] === true && $request['reference'] === '01ORDER');
+    }
+
+    public function test_refund_reads_the_status_object(): void
+    {
+        Http::fake([
+            'https://backbone.test/api/v1/client/payment-intents/pi_9/refund' => Http::response([
+                'data' => ['id' => 'pi_9', 'status' => ['value' => 'completed', 'label' => 'Completed', 'color' => 'green']],
+            ]),
+        ]);
+
+        $this->assertSame('completed', $this->provider->refund('pi_9', 100)['status']);
+    }
+
+    public function test_parse_webhook_carries_the_order_reference_and_the_test_flag(): void
+    {
+        $request = Request::create('/hook', 'POST', [
+            'event' => 'payment_intent.completed',
+            'data' => [
+                'id' => 'pi_1',
+                'reference_code' => 'PAY-1',
+                'reference' => '01M6Q2HJHEJJQYQMRX8YWVEV0K',
+                'status' => 'completed',
+                'amount' => 500000,
+                'currency' => 'KES',
+                'is_test' => true,
+                'metadata' => ['intent_ulid' => '01M6Q2HJHEJJQYQMRX8YWVEV0K'],
+            ],
+        ]);
+
+        $parsed = $this->provider->parseWebhook($request);
+
+        $this->assertSame('01M6Q2HJHEJJQYQMRX8YWVEV0K', $parsed['metadata']['order_reference']);
+        $this->assertTrue($parsed['metadata']['is_test']);
+        $this->assertSame('PAY-1', $parsed['provider_reference']);
+        $this->assertSame('completed', $parsed['status']);
+    }
+
     public function test_get_payment_status_returns_unknown_when_request_fails(): void
     {
         Http::fake([

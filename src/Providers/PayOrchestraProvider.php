@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Moffhub\Billing\Providers;
 
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -95,7 +96,7 @@ class PayOrchestraProvider extends BasePaymentProvider
             ];
         }
 
-        $status = $this->mapStatus($this->jsonString($response, 'data.status', 'pending'));
+        $status = $this->mapStatus($this->statusOf($response, 'pending'));
         $checkoutUrl = $this->jsonNullableString($response, 'data.checkout_url');
 
         // The backbone refused it outright (no connector, declined saved card).
@@ -104,7 +105,7 @@ class PayOrchestraProvider extends BasePaymentProvider
             return [
                 'success' => false,
                 'provider_payment_id' => $this->jsonNullableString($response, 'data.id'),
-                'provider_reference' => $this->jsonNullableString($response, 'data.reference_code'),
+                'provider_reference' => $this->referenceOf($response),
                 'status' => 'failed',
                 'metadata' => [
                     'error' => $this->jsonString($response, 'data.failure_reason', 'PayOrchestra could not take the payment'),
@@ -116,7 +117,7 @@ class PayOrchestraProvider extends BasePaymentProvider
         return [
             'success' => true,
             'provider_payment_id' => $this->jsonNullableString($response, 'data.id'),
-            'provider_reference' => $this->jsonNullableString($response, 'data.reference_code'),
+            'provider_reference' => $this->referenceOf($response),
             'status' => $status,
             'metadata' => [
                 'channel' => $this->jsonNullableString($response, 'data.channel'),
@@ -163,7 +164,7 @@ class PayOrchestraProvider extends BasePaymentProvider
         return [
             'success' => true,
             'provider_refund_id' => $this->jsonNullableString($response, 'data.id'),
-            'status' => $this->mapStatus($this->jsonString($response, 'data.status', 'pending')),
+            'status' => $this->mapStatus($this->statusOf($response, 'pending')),
             'metadata' => $metadataTyped,
         ];
     }
@@ -177,7 +178,7 @@ class PayOrchestraProvider extends BasePaymentProvider
             return 'unknown';
         }
 
-        return $this->mapStatus($this->jsonString($response, 'data.status', 'unknown'));
+        return $this->mapStatus($this->statusOf($response, 'unknown'));
     }
 
     #[\Override]
@@ -253,6 +254,11 @@ class PayOrchestraProvider extends BasePaymentProvider
                     'channel' => $data['channel'] ?? null,
                     'paid_at' => $data['paid_at'] ?? null,
                     'failure_reason' => $data['failure_reason'] ?? null,
+                    // The product's own order reference, as it sent it, so the
+                    // callback can be matched to the order without our payment id.
+                    'order_reference' => isset($data['reference']) && is_string($data['reference']) ? $data['reference'] : null,
+                    // Test money must never be mistaken for a real payment.
+                    'is_test' => (bool) ($data['is_test'] ?? false),
                 ],
             ),
         ];
@@ -395,12 +401,41 @@ class PayOrchestraProvider extends BasePaymentProvider
     protected function mapStatus(string $status): string
     {
         return match (strtolower($status)) {
-            'created', 'pending', 'processing', 'requires_action' => 'pending',
+            'created', 'validated', 'routed', 'pending', 'processing', 'requires_action' => 'pending',
             'completed', 'settled', 'success', 'successful' => 'completed',
             'failed', 'expired', 'cancelled', 'canceled', 'declined' => 'failed',
             'refunded', 'partially_refunded', 'reversed' => 'refunded',
             default => $status === '' ? 'unknown' : $status,
         };
+    }
+
+    /**
+     * The payment's status in an API answer.
+     *
+     * A payment read from the backbone carries its status as an object
+     * (`{value, label, color}`), while a signed callback carries the plain
+     * string. Reading only a string made every status look unknown, and a
+     * payment the backbone had failed look pending.
+     */
+    protected function statusOf(Response $response, string $default): string
+    {
+        $value = $response->json('data.status');
+
+        if (is_array($value)) {
+            $value = $value['value'] ?? null;
+        }
+
+        return is_string($value) && $value !== '' ? $value : $default;
+    }
+
+    /**
+     * The backbone's own reference for the payment. The signed callback calls it
+     * `reference_code`; the payment API has called it `reference_number`.
+     */
+    protected function referenceOf(Response $response): ?string
+    {
+        return $this->jsonNullableString($response, 'data.reference_code')
+            ?? $this->jsonNullableString($response, 'data.reference_number');
     }
 
     protected function defaultCallbackUrl(): ?string
