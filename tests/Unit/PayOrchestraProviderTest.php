@@ -364,7 +364,7 @@ class PayOrchestraProviderTest extends BaseTestCase
 
         $this->assertSame('01M6Q2HJHEJJQYQMRX8YWVEV0K', $parsed['metadata']['order_reference']);
         $this->assertTrue($parsed['metadata']['is_test']);
-        $this->assertSame('PAY-1', $parsed['provider_reference']);
+        $this->assertSame('PAY-1', $parsed['metadata']['provider_reference']);
         $this->assertSame('completed', $parsed['status']);
     }
 
